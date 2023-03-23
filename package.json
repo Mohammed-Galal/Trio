@@ -6,10 +6,7 @@
     "build": "xerex production",
     "serve": "xerex serve"
   },
-  "keywords": [
-    "xerex",
-    "apps"
-  ],
+  "keywords": ["xerex"],
   "author": "Mohammed Galal",
   "license": "ISC",
   "dependencies": {
