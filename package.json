@@ -1,0 +1,19 @@
+{
+  "name": "create-xerex",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "build": "xerex production",
+    "serve": "xerex serve"
+  },
+  "keywords": [
+    "xerex",
+    "apps"
+  ],
+  "author": "Mohammed Galal",
+  "license": "ISC",
+  "dependencies": {
+    "mime-types": "^2.1.35",
+    "xerex": "^1.0.1"
+  }
+}
