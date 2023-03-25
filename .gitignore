@@ -1,5 +1,7 @@
 node_modules
 modules
 
+index.js
+
 package-lock.json
-temp.js
+temp
