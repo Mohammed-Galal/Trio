@@ -190,6 +190,8 @@ Proto.createElement = function ([tag, attrs, children]) {
   return el;
 };
 
+Object.freeze(Proto);
+
 function Fragment() {
   const placeholder = new Text();
   this.placeholder = placeholder;
