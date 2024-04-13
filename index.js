@@ -22,21 +22,24 @@ function Component(C, Props, Children) {
   /** => Validation */
   if (!typeCheck(Self, Component)) throw new TypeError(emptyStr);
   else if (typeCheck(C, Function)) {
-    currContainer = Self;
     C = C(function (key) {
       return Props[key];
     }, Children);
-    currContainer = N;
   }
   if (!typeCheck(C, rootScheme)) throw new TypeError(rootError);
 
   /** => Define deps. */
   const observer = [],
-    observe = (Self.observe = function (index, setter) {
-      observer[index] = setter;
-    });
+    CObsever = (Self.componentsObserver = new Set());
+  Self.observe = function (index, setter) {
+    observer[index] = setter;
+  };
 
   let index = 0;
+
+  Self.render = function () {
+    return Self.navigate(C.dom);
+  };
 
   Self.init = function init() {
     /** add init Function to update patcher if Parent-Patch is Enabled */
@@ -53,40 +56,7 @@ function Component(C, Props, Children) {
     patchEnabled = false;
 
     /** run components observer */
-    updateQueue.forEach((fn) => fn());
-  };
-
-  Self.navigate = function (dom) {
-    const Constructor = dom.constructor;
-
-    switch (Constructor) {
-      case Number:
-        const frag = new Fragment();
-        observe(dom, function (V) {
-          frag.update(V);
-        });
-        return frag; // Fragment
-
-      case Fragment:
-        return dom;
-
-      case String:
-        return new Text(dom);
-
-      case Array:
-        const tag = dom[0];
-        if (typeCheck(tag, Number)) {
-          dom[0] = C.components[tag];
-          return Self.createComponent(dom);
-        } else return Self.createElement(dom);
-
-      default:
-        throw new ReferenceError(emptyStr);
-    }
-  };
-
-  Self.render = function () {
-    return Self.navigate(C.dom);
+    updateQueue.forEach((fn) => fn(C.components));
   };
 
   Object.freeze(Self);
@@ -94,7 +64,37 @@ function Component(C, Props, Children) {
 
 const Proto = Component.prototype;
 
-Proto.createComponent = function ([C, Props, Children]) {
+Proto.navigate = function (dom) {
+  const Self = this,
+    Constructor = dom.constructor;
+
+  switch (Constructor) {
+    case Number:
+      const frag = new Fragment();
+      Self.observe(dom, function (V) {
+        frag.update(V);
+      });
+      return frag; // Fragment
+
+    case Fragment:
+      return dom;
+
+    case String:
+      return new Text(dom);
+
+    case Array:
+      const tag = dom[0],
+        targetMethod = typeCheck(tag, Number)
+          ? "createComponent"
+          : "createElement";
+      return Self[targetMethod](dom);
+
+    default:
+      throw new ReferenceError(emptyStr);
+  }
+};
+
+Proto.createComponent = function ([CIndex, Props, Children]) {
   const Self = this,
     Frag = new Fragment();
 
@@ -104,6 +104,7 @@ Proto.createComponent = function ([C, Props, Children]) {
   };
 
   updateQueue.add(init);
+  // Self.componentsObserver.add(init);
 
   let didUpdateInitialized = false,
     index = 0;
@@ -134,9 +135,10 @@ Proto.createComponent = function ([C, Props, Children]) {
 
   return Frag;
 
-  function init() {
+  function init(components) {
     updateQueue.delete(init);
-    const result = new Component(C, Props, Children);
+    const C = components[CIndex],
+      result = new Component(C, Props, Children);
     Frag.append(result.render());
     // result.init is subject to patchEnabled
     result.init();
