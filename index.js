@@ -1,5 +1,10 @@
-const N = null,
-  emptyStr = "",
+/** Component Update Cases
+ * 1- it updates by its parent ONLY after updating prop(s);
+ * 2- self update, by a function gets passed to the functional Comonent
+ * 3- when context-state updates, it runs all subscriped component
+ */
+
+const emptyStr = "",
   Func = new Function(),
   rootError = "invalid root scheme",
   rootScheme = {
@@ -8,12 +13,14 @@ const N = null,
     dom: Array,
   };
 
-/** Components Patch */
-const updateQueue = new Set();
-let patchEnabled = false;
-
-// current Active Functional Component
-let currContainer = N;
+/** const severData = {
+  somekey: {
+    state: { ...data },
+    componentsObservers: new Set(), // subscriper
+    ...reducers
+  },
+};
+*/
 
 function Component(C, Props, Children) {
   const Self = this;
@@ -42,21 +49,15 @@ function Component(C, Props, Children) {
   };
 
   Self.init = function init() {
-    /** add init Function to update patcher if Parent-Patch is Enabled */
-    if (patchEnabled) return updateQueue.add(init);
-
-    /** delete current init Function to avoid Recursion */
-    updateQueue.delete(init);
-
     /** run scripts observer */
-    patchEnabled = true;
     const currScripts = C.scripts.call(Props);
     index = 0;
     while (index < observer.length) observer[index](currScripts[index++]);
-    patchEnabled = false;
 
     /** run components observer */
-    updateQueue.forEach((fn) => fn(C.components));
+    // we pass C.component due to first-time render => see Self.createComponent
+    CObsever.forEach((fn) => fn(C.components));
+    CObsever.clear();
   };
 
   Object.freeze(Self);
@@ -103,8 +104,7 @@ Proto.createComponent = function ([CIndex, Props, Children]) {
     Frag[appearanceState ? "spreadBehind" : "clear"]();
   };
 
-  updateQueue.add(init);
-  // Self.componentsObserver.add(init);
+  Self.componentsObserver.add(init);
 
   let didUpdateInitialized = false,
     index = 0;
@@ -115,8 +115,11 @@ Proto.createComponent = function ([CIndex, Props, Children]) {
     const prop = keys[index];
     if (typeCheck(Props[prop], Number)) {
       Self.observe(index, function (newVal) {
+        if (newVal === Props[prop]) return;
         Props[prop] = newVal;
-        didUpdateInitialized && Frag.updateCurrentComponent();
+        didUpdateInitialized &&
+          // push child component update to parent observer
+          Self.componentsObserver(Frag.updateCurrentComponent);
       });
     }
     index++;
@@ -136,7 +139,6 @@ Proto.createComponent = function ([CIndex, Props, Children]) {
   return Frag;
 
   function init(components) {
-    updateQueue.delete(init);
     const C = components[CIndex],
       result = new Component(C, Props, Children);
     Frag.append(result.render());
@@ -239,7 +241,9 @@ Fragment.prototype.update = function (newVal, isJSXRoot) {
 
     case Object:
       // what if child node is Fragment ???
-      childNodes.push(new Component(newVal));
+      const C = new Component(newVal);
+      childNodes.push(C.render());
+      C.init();
       break;
 
     default:
