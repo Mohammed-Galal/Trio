@@ -42,10 +42,11 @@ function Component(C, Props, Children) {
     observer[index] = setter;
   };
 
-  let index = 0;
+  let Element,
+    index = 0;
 
   Self.render = function () {
-    return Self.navigate(C.dom);
+    return (Element ||= Self.createElement(C.dom));
   };
 
   Self.init = function init() {
@@ -55,7 +56,7 @@ function Component(C, Props, Children) {
     while (index < observer.length) observer[index](currScripts[index++]);
 
     /** run components observer */
-    // we pass C.component due to first-time render => see Self.createComponent
+    // we pass C.component DUE TO first-time render => see Self.createComponent
     CObsever.forEach((fn) => fn(C.components));
     CObsever.clear();
   };
@@ -213,8 +214,6 @@ Fragment.prototype.clear = function () {
     parentElement = this.parent,
     childNodes = this.childNodes;
 
-  placeholder.textContent = emptyStr;
-
   let index = 0;
   while (index < childNodes.length) {
     const childNode = childNodes[index++];
@@ -223,19 +222,19 @@ Fragment.prototype.clear = function () {
       parentElement.removeChild(childNode.placeholder);
     } else parentElement.removeChild(childNode);
   }
+
+  placeholder.textContent = emptyStr;
+  childNodes.length = 0;
 };
 
 Fragment.prototype.update = function (newVal, isJSXRoot) {
   const self = this,
-    childNodes = self.childNodes,
-    valConstructor = isJSXRoot ? Object : newVal.constructor;
+    childNodes = self.childNodes;
 
   self.clear();
-  self.childNodes.length = 0;
-
   if (newVal === false) return;
 
-  switch (valConstructor) {
+  switch (isJSXRoot ? Object : newVal.constructor) {
     case Array:
       let index = 0;
       while (index < newVal.length) self.update(newVal[index++], true);
