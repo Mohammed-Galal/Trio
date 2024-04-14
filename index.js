@@ -144,8 +144,8 @@ Proto.createComponent = function ([CIndex, Props, Children]) {
       result = new Component(C, Props, Children);
     Frag.append(result.render());
     // result.init is subject to patchEnabled
-    result.init();
     Frag.spreadBehind();
+    result.init();
     Frag.updateCurrentComponent = result.init;
     didUpdateInitialized = true;
   }
@@ -153,9 +153,18 @@ Proto.createComponent = function ([CIndex, Props, Children]) {
 
 Proto.createElement = function ([tag, attrs, children]) {
   const self = this,
-    el = document.createElement(tag);
+    el = document.createElement(tag),
+    useConnectionHandler =
+      attrs.useConnection &&
+      function (fn) {
+        const connectionState = el.parentElement !== null;
+        if (currDisplayState === connectionState) return;
+        currDisplayState = connectionState;
+        fn.call(el, connectionState, el);
+      };
 
-  let index = 0;
+  let currDisplayState = false,
+    index = 0;
 
   /** attrs */
   if (attrs) {
@@ -163,14 +172,27 @@ Proto.createElement = function ([tag, attrs, children]) {
     while (index < keys.length) {
       const item = keys[index++],
         val = attrs[item];
-
-      /** check if private Attr */
-
       if (typeCheck(val, Number)) {
-        self.observe(val, function (newVal) {
-          el[item] = newVal;
-        });
-      } else el[item] = val;
+        let observeHandler;
+        if (/^on[A-Z]/.test(item)) {
+          const evType = item.toLowerCase().slice(0, 2);
+          el.addEventListener(evType, function (E) {
+            /** check if it's not yet initialized */
+            attrs[item].call(el, E);
+          });
+
+          observeHandler = function (evHandler) {
+            attrs[item] = evHandler;
+          };
+        } else
+          observeHandler = function (newVal) {
+            el[item] = newVal;
+          };
+
+        /** check if custom Attr => [useConnection] */
+        // gets called on connecting or disconnecting from DOM
+        self.observe(val, useConnectionHandler || observeHandler);
+      } else if (item !== "useConnection") el[item] = val;
     }
   }
 
@@ -242,6 +264,8 @@ Fragment.prototype.update = function (newVal, isJSXRoot) {
 
     case Object:
       // what if child node is Fragment ???
+      if (typeCheck(newVal, Function))
+        throw newVal.toString() + "invalid jsx root";
       const C = new Component(newVal);
       childNodes.push(C.render());
       C.init();
