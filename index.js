@@ -28,35 +28,50 @@ function Component(C, Props, Children) {
 
   /** => Validation */
   if (!typeCheck(Self, Component)) throw new TypeError(emptyStr);
-  else if (typeCheck(C, Function)) {
-    C = C(function (key) {
-      return Props[key];
-    }, Children);
+  else if (typeCheck(C, Function)) C = C(Self.wrapper, Children);
+  else if (!typeCheck(C, rootScheme)) throw new TypeError(rootError);
+
+  // key: [Int | Str]
+  const key = C.dom[1].key;
+  /** ==> check if root element has a key => return Component */
+  if (key) {
+    // this is for cached dumb-jsx-root
+    const scripts = C.scripts.call(null),
+      keyVal = typeCheck(key, Number) ? scripts[key] : key,
+      cachedVer = __Cache.lookFor(keyVal, Self);
+    // cachedVer === false if it's not found in cached, then it caches Self
+    // cachedVer === true if it's found in cached, and return cached-Component
+    if (cachedVer !== false) return cachedVer;
   }
-  if (!typeCheck(C, rootScheme)) throw new TypeError(rootError);
 
   /** => Define deps. */
-  const observer = [],
-    CObsever = (Self.componentsObserver = new Set());
+  const CObsever = (Self.componentsObserver = new Set()),
+    getProp = function (key) {
+      return Props[key];
+    };
+
+  let observer,
+    Element,
+    index = 0;
+
   Self.observe = function (index, setter) {
+    setter(observer[index]);
     observer[index] = setter;
   };
 
-  let Element,
-    index = 0;
-
   Self.render = function () {
-    return (Element ||= Self.createElement(C.dom));
+    observer ||= C.scripts.call(getProp);
+    Element ||= Self.createElement(C.dom);
+    return Element;
   };
 
   Self.init = function init() {
     /** run scripts observer */
-    const currScripts = C.scripts.call(Props);
+    const currScripts = C.scripts.call(getProp);
     index = 0;
     while (index < observer.length) observer[index](currScripts[index++]);
 
     /** run components observer */
-    // we pass C.component DUE TO first-time render => see Self.createComponent
     CObsever.forEach((fn) => fn(C.components));
     CObsever.clear();
   };
@@ -100,30 +115,27 @@ Proto.createComponent = function ([CIndex, Props, Children]) {
   const Self = this,
     Frag = new Fragment();
 
-  Props ||= {};
-  Props.display = function (appearanceState) {
-    Frag[appearanceState ? "spreadBehind" : "clear"]();
-  };
-
   Self.componentsObserver.add(init);
 
   let didUpdateInitialized = false,
     index = 0;
 
   /** eval Props */
-  const keys = Object.keys(Props);
-  while (index < keys.length) {
-    const prop = keys[index];
-    if (typeCheck(Props[prop], Number)) {
-      Self.observe(index, function (newVal) {
-        if (newVal === Props[prop]) return;
-        Props[prop] = newVal;
-        didUpdateInitialized &&
-          // push child component update to parent observer
-          Self.componentsObserver(Frag.updateCurrentComponent);
-      });
+  if (Props) {
+    const keys = Object.keys(Props);
+    while (index < keys.length) {
+      const prop = keys[index];
+      if (typeCheck(Props[prop], Number)) {
+        Self.observe(index, function (newVal) {
+          if (newVal === Props[prop]) return;
+          Props[prop] = newVal;
+          didUpdateInitialized &&
+            // push child component update to parent observer
+            Self.componentsObserver(Frag.updateCurrentComponent);
+        });
+      }
+      index++;
     }
-    index++;
   }
 
   index = 0;
