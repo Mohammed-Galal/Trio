@@ -31,55 +31,62 @@ function Component(C, Props, Children) {
   else if (typeCheck(C, Function)) C = C(Self.wrapper, Children);
   else if (!typeCheck(C, rootScheme)) throw new TypeError(rootError);
 
-  // key: [Int | Str]
-  const key = C.dom[1].key;
-  /** ==> check if root element has a key => return Component */
-  if (key) {
-    // this is for cached dumb-jsx-root
-    const scripts = C.scripts.call(null),
-      keyVal = typeCheck(key, Number) ? scripts[key] : key,
-      cachedVer = __Cache.lookFor(keyVal, Self);
-    // cachedVer === false if it's not found in cached, then it caches Self
-    // cachedVer === true if it's found in cached, and return cached-Component
-    if (cachedVer !== false) return cachedVer;
-  }
-
   /** => Define deps. */
-  const CObsever = (Self.componentsObserver = new Set()),
-    getProp = function (key) {
-      return Props[key];
-    };
-
-  let observer,
-    Element,
-    index = 0;
-
-  Self.observe = function (index, setter) {
-    setter(observer[index]);
-    observer[index] = setter;
+  const getProp = function (key) {
+    return Props[key];
   };
 
+  let index = 0;
+
   Self.render = function () {
-    observer ||= C.scripts.call(getProp);
-    Element ||= Self.createElement(C.dom);
-    return Element;
+    Self.observers ||= C.scripts.call(Props, getProp);
+    const Result = Self.Element || Self.createElement(C.dom);
+    // return cached-Component or create root Element
+
+    if (typeCheck(Result, Component)) {
+      const currScripts = Self.observers;
+
+      Self.Element = Result.Element;
+      Self.observers = Result.observers;
+      Self.componentsObserver = Result.componentsObserver;
+
+      const observers = Self.observes;
+      index = 0;
+      while (index < observers.length) observers[index](currScripts[index++]);
+    } else {
+      Self.Element = Result;
+      Self.componentsObserver = new Set();
+    }
+
+    /** run components observer */
+    Self.componentsObserver.forEach((fn) => fn(C.components));
+    Self.componentsObserver.clear();
+
+    return Self.Element;
   };
 
   Self.init = function init() {
+    const { observers, componentsObserver: CObservers } = Self;
+
     /** run scripts observer */
-    const currScripts = C.scripts.call(getProp);
+    const currScripts = C.scripts.call(Props, getProp);
     index = 0;
-    while (index < observer.length) observer[index](currScripts[index++]);
+    while (index < observers.length) observers[index](currScripts[index++]);
 
     /** run components observer */
-    CObsever.forEach((fn) => fn(C.components));
-    CObsever.clear();
+    CObservers.forEach((fn) => fn(C.components));
+    CObservers.clear();
   };
 
   Object.freeze(Self);
 }
 
 const Proto = Component.prototype;
+
+Proto.observe = function (index, setter) {
+  setter(this.observers[index]);
+  this.observers[index] = setter;
+};
 
 Proto.navigate = function (dom) {
   const Self = this,
@@ -164,6 +171,20 @@ Proto.createComponent = function ([CIndex, Props, Children]) {
 };
 
 Proto.createElement = function ([tag, attrs, children]) {
+  // key: [Int | Str]
+  const key = attrs.key;
+  /** ==> check if root element has a key => return Component */
+  if (key) {
+    // this is for cached dumb-jsx-root
+    const scripts = C.scripts.call(null),
+      keyVal = typeCheck(key, Number) ? scripts[key] : key,
+      cachedVer = __Cache.lookFor(keyVal, Self);
+    // cachedVer === false if it's not found in cached, then it caches Self
+    // cachedVer === true if it's found in cached, and return cached-Component
+    if (cachedVer !== false) return cachedVer;
+  }
+  // ==================
+
   const self = this,
     el = document.createElement(tag),
     useConnectionHandler =
