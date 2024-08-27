@@ -5,6 +5,7 @@ const PRIVATE_KEY = "#Xtends";
 const EVENT_EXP = /^on[A-Z]/;
 
 function Component(jsxRoot) {
+  if (this.constructor !== Component) return new Component(jsxRoot);
   this.scripts = jsxRoot.scripts();
   this.observers = { scripts: [], components: new Set() };
   this.DOM = this.render(jsxRoot.dom);
@@ -37,8 +38,8 @@ PROTO.render = function (dom) {
       const [tag, attrs, children] = dom;
 
       if (Number.isInteger(tag)) return this.createComponent(dom);
-
-      const el = document.createElement(tag);
+      const el =
+        tag === "Frag" ? new DocumentFragment() : document.createElement(tag);
 
       if (children) {
         const iterator = new Iterator(children);
@@ -51,8 +52,7 @@ PROTO.render = function (dom) {
         }
       }
 
-      if (tag === "Frag") return children || EMPTY_DOM_CONTAINER;
-      else if (attrs) {
+      if (attrs) {
         attrs[PRIVATE_KEY].forEach((OBJ) => Object.assign(el, OBJ));
 
         const keys = Object.keys(attrs).filter((d) => d !== PRIVATE_KEY),
@@ -101,12 +101,21 @@ FRAG_PROTO.append = function (HTMLNode) {
   switch (HTMLNode.constructor) {
     // jsxRoots Array
     case IS_ARRAY(HTMLNode):
-      // SELF.currId = HTMLNode.key;
+      const iterator = new Iterator(HTMLNode);
+      while (iterator.next()) SELF.append(iterator.value());
+      SELF.setAppearance(true);
       break;
 
     // jsxRoot
     case Object:
-      SELF.currId = HTMLNode.key;
+      const key = HTMLNode.key !== null ? HTMLNode.key : HTMLNode.index;
+
+      SELF.cachedDOM.has(key) ||
+        SELF.cachedDOM.set(key, new Component(HTMLNode));
+
+      SELF.currId = key;
+      SELF.cachedDOM.get(key).update();
+      SELF.setAppearance(true);
       break;
 
     default:
