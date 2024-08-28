@@ -6,34 +6,28 @@
     <title>Document</title>
   </head>
   <body>
-    <script src="./typeCheck.js"></script>
-    <script src="./index.js"></script>
+    <!-- <script src="./typeCheck.js"></script>
+    <script src="./index.js"></script> -->
 
+    <script src="./componentProto.js"></script>
     <script>
-      const child = (p, setA) => {
-          console.log(p, setA);
+      let count = 0;
 
-          return {
-            components: [],
-            scripts() {
-              return ["world"];
-            },
-            dom: ["span", null, [0]],
-          };
+      const basicComponent = Object.freeze({
+        index: 0,
+        key: null,
+        components: [],
+        scripts: function () {
+          return [count];
         },
-        R = {
-          components: [child],
-          scripts() {
-            return ["world"];
-          },
-          dom: ["h1", null, ["hello ", [0, null, ["po"]], "oko"]],
-        };
+        dom: ["h1", null, ["count: ", 0]],
+      });
 
-      const C = new Component(R);
+      const result = new Component(basicComponent);
+      document.body.append(result.DOM);
 
-      console.log(C.render());
-
-      C.init();
+      count++;
+      result.update(basicComponent.scripts);
     </script>
   </body>
 </html>

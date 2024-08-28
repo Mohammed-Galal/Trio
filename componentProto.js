@@ -7,17 +7,20 @@ const CACHED = new Map();
 
 function Component(jsxRoot) {
   if (this.constructor !== Component) return new Component(jsxRoot);
-  this.scripts = jsxRoot.scripts();
   this.observers = { scripts: [], components: new Set() };
+  this.scripts = null;
+  this.update(jsxRoot.scripts);
   this.DOM = this.render(jsxRoot.dom);
 }
 
 const PROTO = Component.prototype;
 
 PROTO.render = function (dom) {
+  if (dom === undefined) throw new Error();
+
   // return => HTMLElement || String || scriptExp: DOM_FRAG || Frag: Array
   const SELF = this,
-    DOMType = dom && dom.constructor;
+    DOMType = dom.constructor;
 
   switch (DOMType) {
     // Static Content
@@ -30,9 +33,9 @@ PROTO.render = function (dom) {
         scripts = SELF.scripts,
         value = scripts[dom];
       frag.append(value);
-      scripts.push(function (newVal) {
+      SELF.observers.scripts[dom] = function (newVal) {
         frag.append(newVal);
-      });
+      };
       return frag;
 
     // HTMLElement
@@ -96,10 +99,22 @@ PROTO.render = function (dom) {
   }
 };
 
-PROTO.update = function () {};
+PROTO.update = function ($scripts) {
+  if ($scripts === null) return;
+
+  const SELF = this,
+    scripts = $scripts(),
+    scriptsObserver = SELF.observers.scripts;
+
+  SELF.scripts = scripts;
+
+  let index = 0;
+  while (scriptsObserver.length > index)
+    scriptsObserver[index](scripts[index++]);
+};
 
 function DOM_FRAG() {
-  this.placeholder = EMPTY_STR;
+  this.placeholder = new Text();
   this.display = false;
   this.currDOM;
 }
@@ -164,7 +179,26 @@ function resolveComponent(_component) {
   const key = _component.key;
   if (key !== null)
     return CACHED.has(key)
-      ? CACHED.get(key).update()
+      ? CACHED.get(key).update(_component.scripts)
       : CACHED.set(key, new Component(_component)).get(key);
   else return new Component(_component);
 }
+
+function Iterator(arr) {
+  this.ref = arr;
+  this.index = -1;
+}
+
+Iterator.prototype.next = function () {
+  if (this.ref.length - this.index === 1) return false;
+  this.index++;
+  return true;
+};
+
+Iterator.prototype.value = function () {
+  return this.ref[this.index];
+};
+
+Iterator.prototype.call = function (fn) {
+  fn(this.value());
+};
