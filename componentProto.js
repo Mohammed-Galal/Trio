@@ -3,6 +3,7 @@ const EMPTY_STR = "";
 const EMPTY_DOM_CONTAINER = [];
 const PRIVATE_KEY = "#Xtends";
 const EVENT_EXP = /^on[A-Z]/;
+const CACHED = new Map();
 
 function Component(jsxRoot) {
   if (this.constructor !== Component) return new Component(jsxRoot);
@@ -14,6 +15,7 @@ function Component(jsxRoot) {
 const PROTO = Component.prototype;
 
 PROTO.render = function (dom) {
+  // return => HTMLElement || String || scriptExp: DOM_FRAG || Frag: Array
   const SELF = this,
     DOMType = dom && dom.constructor;
 
@@ -38,8 +40,19 @@ PROTO.render = function (dom) {
       const [tag, attrs, children] = dom;
 
       if (Number.isInteger(tag)) return this.createComponent(dom);
-      const el =
-        tag === "Frag" ? new DocumentFragment() : document.createElement(tag);
+      // else if (tag === "Frag") {
+      //   const DOMChildren = [];
+
+      //   if (children) {
+      //     const iterator = new Iterator(children);
+      //     while (iterator.next())
+      //       DOMChildren.push(SELF.render(iterator.value()));
+      //   }
+
+      //   return DOMChildren;
+      // }
+
+      const el = document.createElement(tag);
 
       if (children) {
         const iterator = new Iterator(children);
@@ -47,7 +60,7 @@ PROTO.render = function (dom) {
           const node = SELF.render(iterator.value());
           if (node.constructor === DOM_FRAG) {
             el.appendChild(node.placeholder);
-            node.setAppearance(true);
+            node.show();
           } else el.appendChild(new Text(node));
         }
       }
@@ -88,13 +101,13 @@ PROTO.update = function () {};
 function DOM_FRAG() {
   this.placeholder = EMPTY_STR;
   this.display = false;
-  this.cachedDOM = new Map();
-  this.currId = null;
+  this.currDOM;
 }
 
 const FRAG_PROTO = DOM_FRAG.prototype;
 
 // append => replaces current active Node
+// whenever this function gets invoked, it removes the current Active DOM, and replaces it with the Content
 FRAG_PROTO.append = function (HTMLNode) {
   const SELF = this;
 
@@ -102,31 +115,29 @@ FRAG_PROTO.append = function (HTMLNode) {
     // jsxRoots Array
     case IS_ARRAY(HTMLNode):
       const iterator = new Iterator(HTMLNode);
-      while (iterator.next()) SELF.append(iterator.value());
-      SELF.setAppearance(true);
+      // iterator.call => invokes the provided function with the current iterator item as parameter
+      while (iterator.next()) iterator.call(resolveComponent);
+      this.currDOM = iterator.ref;
+      SELF.show();
       break;
 
     // jsxRoot
     case Object:
-      const key = HTMLNode.key !== null ? HTMLNode.key : HTMLNode.index;
-
-      SELF.cachedDOM.has(key) ||
-        SELF.cachedDOM.set(key, new Component(HTMLNode));
-
-      SELF.currId = key;
-      SELF.cachedDOM.get(key).update();
-      SELF.setAppearance(true);
+      this.currDOM = resolveComponent(HTMLNode);
       break;
 
     default:
-      SELF.setAppearance(false);
+      SELF.hide();
       const validContent = Number.isInteger(HTMLNode)
         ? HTMLNode
         : HTMLNode || EMPTY_STR;
-      SELF.placeholder.textContent = new String(validContent);
+      SELF.placeholder.textContent = EMPTY_STR + validContent;
       break;
   }
 };
+
+FRAG_PROTO.show = function () {};
+FRAG_PROTO.hide = function () {};
 
 FRAG_PROTO.setAppearance = function (bool) {
   const SELF = this,
@@ -148,3 +159,12 @@ FRAG_PROTO.setAppearance = function (bool) {
     else parentElement.removeChild(targetContainer);
   }
 };
+
+function resolveComponent(_component) {
+  const key = _component.key;
+  if (key !== null)
+    return CACHED.has(key)
+      ? CACHED.get(key).update()
+      : CACHED.set(key, new Component(_component)).get(key);
+  else return new Component(_component);
+}
