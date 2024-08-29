@@ -157,10 +157,8 @@ function showFrag(frag) {
     return (placeholder.textContent = activeDOM);
 
   (function reCall(C) {
-    if (C.constructor === Array) {
-      const iterator = new Iterator(C);
-      while (iterator.next()) reCall(C);
-    } else if (C.DOM.constructor === DOM_FRAG) {
+    if (C.constructor === Array) C.forEach(reCall, null);
+else if (C.DOM.constructor === DOM_FRAG) {
       parentElement.insertBefore(C.DOM.placeholder, placeholder);
       showFrag(C.DOM);
     } else parentElement.insertBefore(C.DOM, placeholder);
@@ -177,10 +175,8 @@ function hideFrag(frag) {
   if (activeDOM === null) return;
 
   (function reCall(C) {
-    if (C.constructor === Array) {
-      const iterator = new Iterator(C);
-      while (iterator.next()) reCall(C);
-    } else if (C.DOM.constructor === DOM_FRAG) hideFrag(C.DOM);
+    if (C.constructor === Array) C.forEach(reCall, null);
+else if (C.DOM.constructor === DOM_FRAG) hideFrag(C.DOM);
     else parentElement.removeChild(C.DOM);
   })(activeDOM);
 }
