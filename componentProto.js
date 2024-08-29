@@ -9,7 +9,10 @@ function Component(jsxRoot) {
   if (this.constructor !== Component) return new Component(jsxRoot);
   this.observers = { scripts: [], components: new Set() };
   this.scripts = null;
+  this.component = jsxRoot.components;
   this.update(jsxRoot.scripts);
+
+  // HTMLElement || DOM_FRAG
   this.DOM = this.render(jsxRoot.dom);
 }
 
@@ -25,16 +28,16 @@ PROTO.render = function (dom) {
   switch (DOMType) {
     // Static Content
     case String:
-      return dom;
+      return new Text(dom);
 
     // Dynamic Content
     case Number:
-      const frag = new DOM_FRAG(),
-        scripts = SELF.scripts,
-        value = scripts[dom];
-      frag.append(value);
+      const frag = new DOM_FRAG();
+      frag.append(SELF.scripts[dom]);
       SELF.observers.scripts[dom] = function (newVal) {
+        hideFrag(frag);
         frag.append(newVal);
+        showFrag(frag);
       };
       return frag;
 
@@ -42,18 +45,8 @@ PROTO.render = function (dom) {
     case Array:
       const [tag, attrs, children] = dom;
 
-      if (Number.isInteger(tag)) return this.createComponent(dom);
-      // else if (tag === "Frag") {
-      //   const DOMChildren = [];
-
-      //   if (children) {
-      //     const iterator = new Iterator(children);
-      //     while (iterator.next())
-      //       DOMChildren.push(SELF.render(iterator.value()));
-      //   }
-
-      //   return DOMChildren;
-      // }
+      if (Number.isInteger(tag)) return new Component(SELF.component[tag]).DOM;
+      // else if (tag === "Frag") {}
 
       const el = document.createElement(tag);
 
@@ -63,8 +56,8 @@ PROTO.render = function (dom) {
           const node = SELF.render(iterator.value());
           if (node.constructor === DOM_FRAG) {
             el.appendChild(node.placeholder);
-            node.show();
-          } else el.appendChild(new Text(node));
+            showFrag(node);
+          } else el.appendChild(node);
         }
       }
 
@@ -115,8 +108,8 @@ PROTO.update = function ($scripts) {
 
 function DOM_FRAG() {
   this.placeholder = new Text();
-  this.display = false;
-  this.currDOM;
+  // Array (Components) || Component || String: Primitive Value
+  this.currDOM = null;
 }
 
 const FRAG_PROTO = DOM_FRAG.prototype;
@@ -132,46 +125,19 @@ FRAG_PROTO.append = function (HTMLNode) {
       const iterator = new Iterator(HTMLNode);
       // iterator.call => invokes the provided function with the current iterator item as parameter
       while (iterator.next()) iterator.call(resolveComponent);
-      this.currDOM = iterator.ref;
-      SELF.show();
+      SELF.currDOM = iterator.result;
       break;
 
     // jsxRoot
     case Object:
-      this.currDOM = resolveComponent(HTMLNode);
+      SELF.currDOM = resolveComponent(HTMLNode);
       break;
 
     default:
-      SELF.hide();
-      const validContent = Number.isInteger(HTMLNode)
+      SELF.currDOM = Number.isInteger(HTMLNode)
         ? HTMLNode
         : HTMLNode || EMPTY_STR;
-      SELF.placeholder.textContent = EMPTY_STR + validContent;
       break;
-  }
-};
-
-FRAG_PROTO.show = function () {};
-FRAG_PROTO.hide = function () {};
-
-FRAG_PROTO.setAppearance = function (bool) {
-  const SELF = this,
-    placeholder = SELF.placeholder,
-    parentElement = placeholder.parentElement,
-    targetContainer = SELF.cachedDOM[SELF.currId];
-
-  placeholder.textContent = EMPTY_STR;
-
-  if (bool) {
-    if (IS_ARRAY(targetContainer))
-      targetContainer.forEach((C) =>
-        parentElement.insertBefore(new Component(C), placeholder)
-      );
-    else parentElement.insertBefore(targetContainer, placeholder);
-  } else {
-    if (IS_ARRAY(targetContainer))
-      targetContainer.forEach((C) => parentElement.removeChild(C));
-    else parentElement.removeChild(targetContainer);
   }
 };
 
@@ -184,9 +150,48 @@ function resolveComponent(_component) {
   else return new Component(_component);
 }
 
+function showFrag(frag) {
+  const placeholder = frag.placeholder,
+    parentElement = placeholder.parentElement,
+    activeDOM = frag.currDOM;
+
+  if (activeDOM === null) return;
+  else if (activeDOM.constructor === String)
+    return (placeholder.textContent = activeDOM);
+
+  (function reCall(C) {
+    if (C.constructor === Array) {
+      const iterator = new Iterator(C);
+      while (iterator.next()) reCall(C);
+    } else if (C.DOM.constructor === DOM_FRAG) {
+      parentElement.insertBefore(C.DOM.placeholder, placeholder);
+      showFrag(C.DOM);
+    } else parentElement.insertBefore(C.DOM, placeholder);
+  })(activeDOM);
+}
+
+function hideFrag(frag) {
+  const placeholder = frag.placeholder,
+    parentElement = placeholder.parentElement,
+    activeDOM = frag.currDOM;
+
+  placeholder.textContent = EMPTY_STR;
+
+  if (activeDOM === null) return;
+
+  (function reCall(C) {
+    if (C.constructor === Array) {
+      const iterator = new Iterator(C);
+      while (iterator.next()) reCall(C);
+    } else if (C.DOM.constructor === DOM_FRAG) hideFrag(C.DOM);
+    else parentElement.removeChild(C.DOM);
+  })(activeDOM);
+}
+
 function Iterator(arr) {
-  this.ref = arr;
   this.index = -1;
+  this.ref = arr;
+  this.result = [];
 }
 
 Iterator.prototype.next = function () {
@@ -200,5 +205,5 @@ Iterator.prototype.value = function () {
 };
 
 Iterator.prototype.call = function (fn) {
-  fn(this.value());
+  this.result[this.index] = fn(this.value());
 };
