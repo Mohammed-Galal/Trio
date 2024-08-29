@@ -122,10 +122,7 @@ FRAG_PROTO.append = function (HTMLNode) {
   switch (HTMLNode.constructor) {
     // jsxRoots Array
     case IS_ARRAY(HTMLNode):
-      const iterator = new Iterator(HTMLNode);
-      // iterator.call => invokes the provided function with the current iterator item as parameter
-      while (iterator.next()) iterator.call(resolveComponent);
-      SELF.currDOM = iterator.result;
+      SELF.currDOM = HTMLNode.map(resolveComponent, null);
       break;
 
     // jsxRoot
