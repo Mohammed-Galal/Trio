@@ -37,7 +37,7 @@ PROTO.render = function (dom) {
       SELF.observers.scripts[dom] = function (newVal) {
         hideFrag(frag);
         frag.append(newVal);
-        showFrag(frag);
+        spreadFrag(frag);
       };
       return frag;
 
@@ -56,7 +56,7 @@ PROTO.render = function (dom) {
           const node = SELF.render(iterator.value());
           if (node.constructor === DOM_FRAG) {
             el.appendChild(node.placeholder);
-            showFrag(node);
+            spreadFrag(node);
           } else el.appendChild(node);
         }
       }
@@ -104,10 +104,13 @@ PROTO.update = function ($scripts) {
   let index = 0;
   while (scriptsObserver.length > index)
     scriptsObserver[index](scripts[index++]);
+
+  return this;
 };
 
 function DOM_FRAG() {
   this.placeholder = new Text();
+  this.cache = { scriped: new Map(), descriped: new Map() };
   // Array (Components) || Component || String: Primitive Value
   this.currDOM = null;
 }
@@ -118,11 +121,15 @@ const FRAG_PROTO = DOM_FRAG.prototype;
 // whenever this function gets invoked, it removes the current Active DOM, and replaces it with the Content
 FRAG_PROTO.append = function (HTMLNode) {
   const SELF = this;
+  SELF.currDOM = null;
 
   switch (HTMLNode.constructor) {
     // jsxRoots Array
     case IS_ARRAY(HTMLNode):
-      SELF.currDOM = HTMLNode.map(resolveComponent, null);
+      const result = (SELF.currDOM = []),
+        iterator = new Iterator(HTMLNode);
+      while (iterator.next())
+        result[iterator.index] = SELF.resolveComponent(iterator.value());
       break;
 
     // jsxRoot
@@ -138,16 +145,25 @@ FRAG_PROTO.append = function (HTMLNode) {
   }
 };
 
-function resolveComponent(_component) {
+FRAG_PROTO.resolveComponent = function (_component) {
   const key = _component.key;
-  if (key !== null)
-    return CACHED.has(key)
-      ? CACHED.get(key).update(_component.scripts)
-      : CACHED.set(key, new Component(_component)).get(key);
-  else return new Component(_component);
-}
+  if (key === null) {
+    const targetCache = Number.isInteger(_component.dom[0])
+        ? "scriped"
+        : "descriped",
+      cache = this.cache[targetCache],
+      index = _component.index;
+    return cache.has(index)
+      ? cache.get(index).update(_component.scripts)
+      : cache.set(index, new Component(_component));
+  }
 
-function showFrag(frag) {
+  return CACHED.has(key)
+    ? CACHED.get(key).update(_component.scripts)
+    : CACHED.set(key, new Component(_component)).get(key);
+};
+
+function spreadFrag(frag) {
   const placeholder = frag.placeholder,
     parentElement = placeholder.parentElement,
     activeDOM = frag.currDOM;
@@ -155,14 +171,18 @@ function showFrag(frag) {
   if (activeDOM === null) return;
   else if (activeDOM.constructor === String)
     return (placeholder.textContent = activeDOM);
+  else if (IS_ARRAY(activeDOM)) {
+    const iterator = new Iterator(activeDOM);
+    while (iterator.next())
+      appendToFrag(parentElement, iterator.value().DOM, placeholder);
+  } else appendToFrag(parentElement, activeDOM.DOM, placeholder);
+}
 
-  (function reCall(C) {
-    if (C.constructor === Array) C.forEach(reCall, null);
-else if (C.DOM.constructor === DOM_FRAG) {
-      parentElement.insertBefore(C.DOM.placeholder, placeholder);
-      showFrag(C.DOM);
-    } else parentElement.insertBefore(C.DOM, placeholder);
-  })(activeDOM);
+function appendToFrag(parentElement, DOMNode, placeholder) {
+  if (DOMNode.constructor === DOM_FRAG) {
+    parentElement.insertBefore(DOMNode.placeholder, placeholder);
+    spreadFrag(DOMNode);
+  } else parentElement.insertBefore(DOMNode, placeholder);
 }
 
 function hideFrag(frag) {
@@ -176,7 +196,7 @@ function hideFrag(frag) {
 
   (function reCall(C) {
     if (C.constructor === Array) C.forEach(reCall, null);
-else if (C.DOM.constructor === DOM_FRAG) hideFrag(C.DOM);
+    else if (C.DOM.constructor === DOM_FRAG) hideFrag(C.DOM);
     else parentElement.removeChild(C.DOM);
   })(activeDOM);
 }
