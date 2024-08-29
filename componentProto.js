@@ -2,6 +2,7 @@ const IS_ARRAY = Array.isArray;
 const EMPTY_STR = "";
 const EMPTY_DOM_CONTAINER = [];
 const PRIVATE_KEY = "#Xtends";
+const CUSTOM_TAGS = /Frag|Switch|Case|Link/;
 const EVENT_EXP = /^on[A-Z]/;
 const CACHED = new Map();
 
@@ -11,7 +12,6 @@ function Component(jsxRoot) {
   this.scripts = null;
   this.component = jsxRoot.components;
   this.update(jsxRoot.scripts);
-
   // HTMLElement || DOM_FRAG
   this.DOM = this.render(jsxRoot.dom);
 }
@@ -46,7 +46,7 @@ PROTO.render = function (dom) {
       const [tag, attrs, children] = dom;
 
       if (Number.isInteger(tag)) return new Component(SELF.component[tag]).DOM;
-      // else if (tag === "Frag") {}
+      else if (CUSTOM_TAGS.test(tag)) return handleCustomTag(SELF, dom);
 
       const el = document.createElement(tag);
 
