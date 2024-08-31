@@ -2,6 +2,7 @@ const IS_ARRAY = Array.isArray;
 const EMPTY_STR = "";
 const EMPTY_DOM_CONTAINER = [];
 const PRIVATE_KEY = "#Xtends";
+const CUSTOM_TAGS = /Frag|Switch|Case|Link/;
 const EVENT_EXP = /^on[A-Z]/;
 const CACHED = new Map();
 
@@ -9,7 +10,9 @@ function Component(jsxRoot) {
   if (this.constructor !== Component) return new Component(jsxRoot);
   this.observers = { scripts: [], components: new Set() };
   this.scripts = null;
+  this.component = jsxRoot.components;
   this.update(jsxRoot.scripts);
+  // HTMLElement || DOM_FRAG
   this.DOM = this.render(jsxRoot.dom);
 }
 
@@ -25,16 +28,16 @@ PROTO.render = function (dom) {
   switch (DOMType) {
     // Static Content
     case String:
-      return dom;
+      return new Text(dom);
 
     // Dynamic Content
     case Number:
-      const frag = new DOM_FRAG(),
-        scripts = SELF.scripts,
-        value = scripts[dom];
-      frag.append(value);
+      const frag = new DOM_FRAG();
+      frag.append(SELF.scripts[dom]);
       SELF.observers.scripts[dom] = function (newVal) {
+        hideFrag(frag);
         frag.append(newVal);
+        spreadFrag(frag);
       };
       return frag;
 
@@ -42,18 +45,8 @@ PROTO.render = function (dom) {
     case Array:
       const [tag, attrs, children] = dom;
 
-      if (Number.isInteger(tag)) return this.createComponent(dom);
-      // else if (tag === "Frag") {
-      //   const DOMChildren = [];
-
-      //   if (children) {
-      //     const iterator = new Iterator(children);
-      //     while (iterator.next())
-      //       DOMChildren.push(SELF.render(iterator.value()));
-      //   }
-
-      //   return DOMChildren;
-      // }
+      if (Number.isInteger(tag)) return new Component(SELF.component[tag]).DOM;
+      else if (CUSTOM_TAGS.test(tag)) return handleCustomTag(SELF, dom);
 
       const el = document.createElement(tag);
 
@@ -63,8 +56,8 @@ PROTO.render = function (dom) {
           const node = SELF.render(iterator.value());
           if (node.constructor === DOM_FRAG) {
             el.appendChild(node.placeholder);
-            node.show();
-          } else el.appendChild(new Text(node));
+            spreadFrag(node);
+          } else el.appendChild(node);
         }
       }
 
@@ -111,12 +104,15 @@ PROTO.update = function ($scripts) {
   let index = 0;
   while (scriptsObserver.length > index)
     scriptsObserver[index](scripts[index++]);
+
+  return this;
 };
 
 function DOM_FRAG() {
   this.placeholder = new Text();
-  this.display = false;
-  this.currDOM;
+  this.cache = { scriped: new Map(), descriped: new Map() };
+  // Array (Components) || Component || String: Primitive Value
+  this.currDOM = null;
 }
 
 const FRAG_PROTO = DOM_FRAG.prototype;
@@ -125,68 +121,90 @@ const FRAG_PROTO = DOM_FRAG.prototype;
 // whenever this function gets invoked, it removes the current Active DOM, and replaces it with the Content
 FRAG_PROTO.append = function (HTMLNode) {
   const SELF = this;
+  SELF.currDOM = null;
 
   switch (HTMLNode.constructor) {
     // jsxRoots Array
     case IS_ARRAY(HTMLNode):
-      const iterator = new Iterator(HTMLNode);
-      // iterator.call => invokes the provided function with the current iterator item as parameter
-      while (iterator.next()) iterator.call(resolveComponent);
-      this.currDOM = iterator.ref;
-      SELF.show();
+      const result = (SELF.currDOM = []),
+        iterator = new Iterator(HTMLNode);
+      while (iterator.next())
+        result[iterator.index] = SELF.resolveComponent(iterator.value());
       break;
 
     // jsxRoot
     case Object:
-      this.currDOM = resolveComponent(HTMLNode);
+      SELF.currDOM = resolveComponent(HTMLNode);
       break;
 
     default:
-      SELF.hide();
-      const validContent = Number.isInteger(HTMLNode)
+      SELF.currDOM = Number.isInteger(HTMLNode)
         ? HTMLNode
         : HTMLNode || EMPTY_STR;
-      SELF.placeholder.textContent = EMPTY_STR + validContent;
       break;
   }
 };
 
-FRAG_PROTO.show = function () {};
-FRAG_PROTO.hide = function () {};
+FRAG_PROTO.resolveComponent = function (_component) {
+  const key = _component.key;
+  if (key === null) {
+    const targetCache = Number.isInteger(_component.dom[0])
+        ? "scriped"
+        : "descriped",
+      cache = this.cache[targetCache],
+      index = _component.index;
+    return cache.has(index)
+      ? cache.get(index).update(_component.scripts)
+      : cache.set(index, new Component(_component));
+  }
 
-FRAG_PROTO.setAppearance = function (bool) {
-  const SELF = this,
-    placeholder = SELF.placeholder,
+  return CACHED.has(key)
+    ? CACHED.get(key).update(_component.scripts)
+    : CACHED.set(key, new Component(_component)).get(key);
+};
+
+function spreadFrag(frag) {
+  const placeholder = frag.placeholder,
     parentElement = placeholder.parentElement,
-    targetContainer = SELF.cachedDOM[SELF.currId];
+    activeDOM = frag.currDOM;
+
+  if (activeDOM === null) return;
+  else if (activeDOM.constructor === String)
+    return (placeholder.textContent = activeDOM);
+  else if (IS_ARRAY(activeDOM)) {
+    const iterator = new Iterator(activeDOM);
+    while (iterator.next())
+      appendToFrag(parentElement, iterator.value().DOM, placeholder);
+  } else appendToFrag(parentElement, activeDOM.DOM, placeholder);
+}
+
+function appendToFrag(parentElement, DOMNode, placeholder) {
+  if (DOMNode.constructor === DOM_FRAG) {
+    parentElement.insertBefore(DOMNode.placeholder, placeholder);
+    spreadFrag(DOMNode);
+  } else parentElement.insertBefore(DOMNode, placeholder);
+}
+
+function hideFrag(frag) {
+  const placeholder = frag.placeholder,
+    parentElement = placeholder.parentElement,
+    activeDOM = frag.currDOM;
 
   placeholder.textContent = EMPTY_STR;
 
-  if (bool) {
-    if (IS_ARRAY(targetContainer))
-      targetContainer.forEach((C) =>
-        parentElement.insertBefore(new Component(C), placeholder)
-      );
-    else parentElement.insertBefore(targetContainer, placeholder);
-  } else {
-    if (IS_ARRAY(targetContainer))
-      targetContainer.forEach((C) => parentElement.removeChild(C));
-    else parentElement.removeChild(targetContainer);
-  }
-};
+  if (activeDOM === null) return;
 
-function resolveComponent(_component) {
-  const key = _component.key;
-  if (key !== null)
-    return CACHED.has(key)
-      ? CACHED.get(key).update(_component.scripts)
-      : CACHED.set(key, new Component(_component)).get(key);
-  else return new Component(_component);
+  (function reCall(C) {
+    if (C.constructor === Array) C.forEach(reCall, null);
+    else if (C.DOM.constructor === DOM_FRAG) hideFrag(C.DOM);
+    else parentElement.removeChild(C.DOM);
+  })(activeDOM);
 }
 
 function Iterator(arr) {
-  this.ref = arr;
   this.index = -1;
+  this.ref = arr;
+  this.result = [];
 }
 
 Iterator.prototype.next = function () {
@@ -200,5 +218,5 @@ Iterator.prototype.value = function () {
 };
 
 Iterator.prototype.call = function (fn) {
-  fn(this.value());
+  this.result[this.index] = fn(this.value());
 };
