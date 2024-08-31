@@ -35,7 +35,7 @@ PROTO.render = function (dom) {
       const frag = new DOM_FRAG();
       frag.append(SELF.scripts[dom]);
       SELF.observers.scripts[dom] = function (newVal) {
-        hideFrag(frag);
+        collapseFrag(frag);
         frag.append(newVal);
         spreadFrag(frag);
       };
@@ -146,21 +146,20 @@ FRAG_PROTO.append = function (HTMLNode) {
 };
 
 FRAG_PROTO.resolveComponent = function (_component) {
-  const key = _component.key;
+  let cacheContainer = CACHED,
+    key = _component.key;
+
   if (key === null) {
     const targetCache = Number.isInteger(_component.dom[0])
-        ? "scriped"
-        : "descriped",
-      cache = this.cache[targetCache],
-      index = _component.index;
-    return cache.has(index)
-      ? cache.get(index).update(_component.scripts)
-      : cache.set(index, new Component(_component));
+      ? "scriped"
+      : "descriped";
+    cacheContainer = this.cache[targetCache];
+    key = _component.index;
   }
 
-  return CACHED.has(key)
-    ? CACHED.get(key).update(_component.scripts)
-    : CACHED.set(key, new Component(_component)).get(key);
+  return targetCache.has(key)
+    ? targetCache.get(key).update(_component.scripts)
+    : targetCache.set(key, new Component(_component)).get(key);
 };
 
 function spreadFrag(frag) {
@@ -178,14 +177,7 @@ function spreadFrag(frag) {
   } else appendToFrag(parentElement, activeDOM.DOM, placeholder);
 }
 
-function appendToFrag(parentElement, DOMNode, placeholder) {
-  if (DOMNode.constructor === DOM_FRAG) {
-    parentElement.insertBefore(DOMNode.placeholder, placeholder);
-    spreadFrag(DOMNode);
-  } else parentElement.insertBefore(DOMNode, placeholder);
-}
-
-function hideFrag(frag) {
+function collapseFrag(frag) {
   const placeholder = frag.placeholder,
     parentElement = placeholder.parentElement,
     activeDOM = frag.currDOM;
@@ -193,12 +185,22 @@ function hideFrag(frag) {
   placeholder.textContent = EMPTY_STR;
 
   if (activeDOM === null) return;
+  else if (IS_ARRAY(activeDOM)) {
+    const iterator = new Iterator(activeDOM);
+    while (iterator.next()) removeFromFrag(parentElement, iterator.value().DOM);
+  } else appendToFrag(parentElement, activeDOM.DOM);
+}
 
-  (function reCall(C) {
-    if (C.constructor === Array) C.forEach(reCall, null);
-    else if (C.DOM.constructor === DOM_FRAG) hideFrag(C.DOM);
-    else parentElement.removeChild(C.DOM);
-  })(activeDOM);
+function appendToFrag(parentElement, DOMNode, placeholder) {
+  if (DOMNode.constructor === DOM_FRAG) {
+    parentElement.insertBefore(DOMNode.placeholder, placeholder);
+    spreadFrag(DOMNode);
+  } else parentElement.insertBefore(DOMNode, placeholder);
+}
+
+function removeFromFrag(parentElement, DOMNode) {
+  if (DOMNode.constructor === DOM_FRAG) collapseFrag(DOM_FRAG);
+  else parentElement.removeChild(DOMNode);
 }
 
 function Iterator(arr) {
