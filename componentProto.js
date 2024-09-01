@@ -108,7 +108,74 @@ PROTO.update = function ($scripts) {
   return this;
 };
 
-function handleCustomTag(tag, currRoot) {}
+function handleCustomTag(element, currRoot) {
+  const [tag, attrs, children] = element;
+
+  switch (tag) {
+    case "Frag": {
+      const frag = new DOM_FRAG(),
+        iterator = new Iterator(children);
+      while (iterator.next()) frag.append(currRoot.render(iterator.value()));
+      return frag;
+    }
+
+    case "Switch":
+      const frag = new DOM_FRAG(),
+        iterator = new Iterator(children),
+        observer = [];
+
+      const DOMContainer = (frag.currDOM = []);
+
+      let preventCalling = false;
+
+      while (iterator.next()) {
+        const child = iterator.value();
+        if (child[0] !== "Case") continue;
+        else if (child[1]) {
+          const scriptIndex = child[1].test;
+
+          if (scriptIndex === undefined || Number.isInteger(scriptIndex)) {
+            currRoot.observers.scripts[scriptIndex] = updateSwitch;
+            observer.push(function () {
+              const condition = currRoot.scripts[scriptIndex];
+              if (Boolean(condition)) {
+                if (DOMContainer.length === 0) {
+                  const grandChildrenIterator = new Iterator(child[2]);
+                  while (grandChildrenIterator.next())
+                    DOMContainer.push(
+                      currRoot.render(grandChildrenIterator.value())
+                    );
+                }
+
+                frag.currDOM = DOMContainer;
+              }
+            });
+          }
+
+          if ("break" in child[1]) break;
+        }
+      }
+
+      function updateSwitch() {
+        collapseFrag(frag);
+        observer.forEach((fn) => fn());
+        spreadFrag(frag);
+      }
+
+      return frag;
+
+    case "Link":
+      if (attrs) {
+        const { href, target } = attrs;
+        // code
+        delete attrs.href;
+        delete attrs.target;
+      }
+
+      element[0] = "a";
+      return currRoot.render(element);
+  }
+}
 
 function DOM_FRAG() {
   this.placeholder = new Text();
