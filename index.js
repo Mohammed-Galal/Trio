@@ -1,327 +1,230 @@
-/** Component Update Cases
- * 1- it updates by its parent ONLY after updating prop(s);
- * 2- self update, by a function gets passed to the functional Comonent
- * 3- when context-state updates, it runs all subscriped component
- */
+const IS_ARRAY = Array.isArray;
+const EMPTY_STR = "";
+const EMPTY_DOM_CONTAINER = [];
+const PRIVATE_KEY = "#Xtends";
+const CUSTOM_TAGS = /Frag|Switch|Case|Link/;
+const EVENT_EXP = /^on[A-Z]/;
+const CACHED = new Map();
 
-const emptyStr = "",
-  Func = new Function(),
-  rootError = "invalid root scheme",
-  rootScheme = {
-    components: Array,
-    scripts: Function,
-    dom: Array,
-  };
-
-/** const severData = {
-  somekey: {
-    state: { ...data },
-    componentsObservers: new Set(), // subscriper
-    ...reducers
-  },
-};
-*/
-
-function Component(C, Props, Children) {
-  const Self = this;
-  Object.freeze(C);
-
-  /** => Validation */
-  if (!typeCheck(Self, Component)) throw new TypeError(emptyStr);
-  else if (typeCheck(C, Function)) C = C(Self.wrapper, Children);
-  else if (!typeCheck(C, rootScheme)) throw new TypeError(rootError);
-
-  /** => Define deps. */
-  const getProp = function (key) {
-    return Props[key];
-  };
-
-  let index = 0;
-
-  Self.render = function () {
-    Self.observers ||= C.scripts.call(Props, getProp);
-    const Result = Self.Element || Self.createElement(C.dom);
-    // return cached-Component or create root Element
-
-    if (typeCheck(Result, Component)) {
-      const currScripts = Self.observers;
-
-      Self.Element = Result.Element;
-      Self.observers = Result.observers;
-      Self.componentsObserver = Result.componentsObserver;
-
-      const observers = Self.observes;
-      index = 0;
-      while (index < observers.length) observers[index](currScripts[index++]);
-    } else {
-      Self.Element = Result;
-      Self.componentsObserver = new Set();
-    }
-
-    /** run components observer */
-    Self.componentsObserver.forEach((fn) => fn(C.components));
-    Self.componentsObserver.clear();
-
-    return Self.Element;
-  };
-
-  Self.init = function init() {
-    const { observers, componentsObserver: CObservers } = Self;
-
-    /** run scripts observer */
-    const currScripts = C.scripts.call(Props, getProp);
-    index = 0;
-    while (index < observers.length) observers[index](currScripts[index++]);
-
-    /** run components observer */
-    CObservers.forEach((fn) => fn(C.components));
-    CObservers.clear();
-  };
-
-  Object.freeze(Self);
+function Component(jsxRoot) {
+  if (this.constructor !== Component) return new Component(jsxRoot);
+  const SELF = this;
+  SELF.component = jsxRoot.components;
+  // debugger;
+  if (jsxRoot.scripts) {
+    SELF.observers = { scripts: [], components: new Set() };
+    SELF.initScripts = jsxRoot.scripts;
+    SELF.scripts = SELF.initScripts.apply(null);
+  }
+  SELF.DOM = render(this, jsxRoot.dom); // HTMLElement || DOM_FRAG
 }
 
-const Proto = Component.prototype;
+const PROTO = Component.prototype;
 
-Proto.observe = function (index, setter) {
-  setter(this.observers[index]);
-  this.observers[index] = setter;
+PROTO.update = function () {
+  if (this.scripts !== undefined) {
+    this.scripts = this.initScripts.apply(null);
+    this.observers.scripts.forEach((S) => S());
+    this.observers.components.forEach((C) => C());
+    this.observers.components.clear();
+  }
+  return this;
 };
 
-Proto.navigate = function (dom) {
-  const Self = this,
-    Constructor = dom.constructor;
+function render(ctx, shadowHTMLElement) {
+  const [tag, attrs, children] = shadowHTMLElement;
 
-  switch (Constructor) {
-    case Number:
-      const frag = new Fragment();
-      Self.observe(dom, function (V) {
-        frag.update(V);
-      });
-      return frag; // Fragment
+  if (Number.isInteger(tag)) return new Component(shadowHTMLElement, ctx).DOM;
+  else if (CUSTOM_TAGS.test(tag))
+    return handleCustomTag(shadowHTMLElement, ctx);
 
-    case Fragment:
-      return dom;
+  const el = document.createElement(tag);
 
-    case String:
-      return new Text(dom);
-
-    case Array:
-      const tag = dom[0],
-        targetMethod = typeCheck(tag, Number)
-          ? "createComponent"
-          : "createElement";
-      return Self[targetMethod](dom);
-
-    default:
-      throw new ReferenceError(emptyStr);
-  }
-};
-
-Proto.createComponent = function ([CIndex, Props, Children]) {
-  const Self = this,
-    Frag = new Fragment();
-
-  Self.componentsObserver.add(init);
-
-  let didUpdateInitialized = false,
-    index = 0;
-
-  /** eval Props */
-  if (Props) {
-    const keys = Object.keys(Props);
-    while (index < keys.length) {
-      const prop = keys[index];
-      if (typeCheck(Props[prop], Number)) {
-        Self.observe(index, function (newVal) {
-          if (newVal === Props[prop]) return;
-          Props[prop] = newVal;
-          didUpdateInitialized &&
-            // push child component update to parent observer
-            Self.componentsObserver(Frag.updateCurrentComponent);
-        });
-      }
-      index++;
-    }
-  }
-
-  index = 0;
-  /** render Children */
-  if (Children) {
-    const childrenFrag = new Fragment();
-    while (index < Children.length) {
-      const item = Children[index++];
-      childrenFrag.append(Self.navigate(item));
-    }
-    Children = childrenFrag;
-  }
-
-  return Frag;
-
-  function init(components) {
-    const C = components[CIndex],
-      result = new Component(C, Props, Children);
-    Frag.append(result.render());
-    // result.init is subject to patchEnabled
-    Frag.spreadBehind();
-    result.init();
-    Frag.updateCurrentComponent = result.init;
-    didUpdateInitialized = true;
-  }
-};
-
-Proto.createElement = function ([tag, attrs, children]) {
-  // key: [Int | Str]
-  const key = attrs.key;
-  /** ==> check if root element has a key => return Component */
-  if (key) {
-    // this is for cached dumb-jsx-root
-    const scripts = C.scripts.call(null),
-      keyVal = typeCheck(key, Number) ? scripts[key] : key,
-      cachedVer = __Cache.lookFor(keyVal, Self);
-    // cachedVer === false if it's not found in cached, then it caches Self
-    // cachedVer === true if it's found in cached, and return cached-Component
-    if (cachedVer !== false) return cachedVer;
-  }
-  // ==================
-
-  const self = this,
-    el = document.createElement(tag),
-    useConnectionHandler =
-      attrs.useConnection &&
-      function (fn) {
-        const connectionState = el.parentElement !== null;
-        if (currDisplayState === connectionState) return;
-        currDisplayState = connectionState;
-        fn.call(el, connectionState, el);
-      };
-
-  let currDisplayState = false,
-    index = 0;
-
-  /** attrs */
-  if (attrs) {
-    const keys = Object.keys(attrs);
-    while (index < keys.length) {
-      const item = keys[index++],
-        val = attrs[item];
-      if (typeCheck(val, Number)) {
-        let observeHandler;
-        if (/^on[A-Z]/.test(item)) {
-          const evType = item.toLowerCase().slice(0, 2);
-          el.addEventListener(evType, function (E) {
-            /** check if it's not yet initialized */
-            attrs[item].call(el, E);
-          });
-
-          observeHandler = function (evHandler) {
-            attrs[item] = evHandler;
-          };
-        } else
-          observeHandler = function (newVal) {
-            el[item] = newVal;
-          };
-
-        /** check if custom Attr => [useConnection] */
-        // gets called on connecting or disconnecting from DOM
-        self.observe(val, useConnectionHandler || observeHandler);
-      } else if (item !== "useConnection") el[item] = val;
-    }
-  }
-
-  index = 0;
-  /** children */
   if (children) {
-    while (index < children.length) {
-      const item = children[index++],
-        childNode = self.navigate(item);
-      // if Requiring Children
-      if (typeCheck(childNode, Fragment)) {
-        el.appendChild(childNode.placeholder);
-        childNode.spreadBehind();
-      } else el.appendChild(childNode);
+    const iterator = new Iterator(children);
+    while (iterator.next()) {
+      const node = iterator.value(),
+        DOMType = node.constructor;
+
+      switch (DOMType) {
+        // Static Content
+        case String:
+          el.appendChild(new Text(node));
+          break;
+
+        // Dynamic Content
+        case Number:
+          const frag = new DOM_FRAG();
+          frag.append(ctx.scripts[node]);
+          el.appendChild(frag.placeholder);
+          spreadFrag(frag);
+          ctx.observers.scripts.push(function () {
+            clear(frag);
+            frag.append(ctx.scripts[node]);
+            spreadFrag(frag);
+          });
+          break;
+
+        default:
+          const result = render(ctx, node);
+          if (result.constructor === DOM_FRAG) {
+            el.appendChild(result.placeholder);
+            spreadFrag(result);
+          } else el.appendChild(result);
+      }
+    }
+  }
+
+  if (attrs) {
+    attrs[PRIVATE_KEY].forEach((OBJ) => Object.assign(el, OBJ));
+
+    const keys = Object.keys(attrs).filter((d) => d !== PRIVATE_KEY),
+      iterator = new Iterator(keys);
+
+    while (iterator.next()) {
+      const attrName = iterator.value(),
+        attrValue = attrs[attrName];
+
+      switch (true) {
+        case EVENT_EXP.test(attrName):
+          const evType = attrName.slice(2).toLowerCase();
+          el.addEventListener(evType, function () {
+            ctx.scripts[attrValue].apply(el, Array.from(arguments));
+          });
+          break;
+
+        case attrName === "ref":
+          ctx.scripts[attrValue].call(el, el);
+          break;
+
+        case attrName === "style":
+          Object.assign(el.style, ctx.scripts[attrValue]);
+          ctx.observers.scripts.push(function () {
+            Object.assign(el.style, ctx.scripts[attrValue]);
+          });
+          break;
+
+        default:
+          el[attrName] = attrValue;
+      }
     }
   }
 
   return el;
-};
-
-Object.freeze(Proto);
-
-function Fragment() {
-  const placeholder = new Text();
-  this.placeholder = placeholder;
-  this.childNodes = [];
-
-  Object.defineProperty(this, "parent", {
-    get() {
-      return placeholder.parentElement;
-    },
-  });
 }
 
-Fragment.prototype.append = function (childNode) {
-  this.childNodes.push(childNode);
-};
+function handleCustomTag(tag, currRoot) {}
 
-Fragment.prototype.clear = function () {
-  const placeholder = this.placeholder,
-    parentElement = this.parent,
-    childNodes = this.childNodes;
+function DOM_FRAG() {
+  this.placeholder = new Text();
+  this.cache = { scriped: new Map(), descriped: new Map() };
+  // Array (Components) || Component || String: Primitive Value
+  this.currDOM = null;
+}
 
-  let index = 0;
-  while (index < childNodes.length) {
-    const childNode = childNodes[index++];
-    if (typeCheck(childNode, Fragment)) {
-      childNode.clear();
-      parentElement.removeChild(childNode.placeholder);
-    } else parentElement.removeChild(childNode);
-  }
+const FRAG_PROTO = DOM_FRAG.prototype;
 
-  placeholder.textContent = emptyStr;
-  childNodes.length = 0;
-};
+// append => replaces current active Node
+// whenever this function gets invoked, it removes the current Active DOM, and replaces it with the Content
+FRAG_PROTO.append = function (HTMLNode) {
+  const SELF = this;
 
-Fragment.prototype.update = function (newVal, isJSXRoot) {
-  const self = this,
-    childNodes = self.childNodes;
-
-  self.clear();
-  if (newVal === false) return;
-
-  switch (isJSXRoot ? Object : newVal.constructor) {
-    case Array:
-      let index = 0;
-      while (index < newVal.length) self.update(newVal[index++], true);
+  switch (HTMLNode.constructor) {
+    // jsxRoots Array
+    case IS_ARRAY(HTMLNode):
+      const result = (SELF.currDOM = []),
+        iterator = new Iterator(HTMLNode);
+      while (iterator.next())
+        result[iterator.index] = SELF.resolveComponent(iterator.value());
       break;
 
+    // jsxRoot
     case Object:
-      // what if child node is Fragment ???
-      if (typeCheck(newVal, Function))
-        throw newVal.toString() + "invalid jsx root";
-      const C = new Component(newVal);
-      childNodes.push(C.render());
-      C.init();
+      SELF.currDOM = resolveComponent(HTMLNode);
       break;
 
     default:
-      self.placeholder.textContent = emptyStr + newVal;
-  }
-
-  self.spreadBehind();
-};
-
-Fragment.prototype.spreadBehind = function () {
-  const placeholder = this.placeholder,
-    parentElement = this.parent,
-    childNodes = this.childNodes;
-
-  let index = 0;
-  while (index < childNodes.length) {
-    const childNode = childNodes[index++];
-    if (typeCheck(childNode, Fragment)) {
-      parentElement.insertBefore(childNode.placeholder);
-      childNode.spreadBehind();
-    } else parentElement.insertBefore(childNode, placeholder);
+      SELF.currDOM =
+        EMPTY_STR +
+        (Number.isInteger(HTMLNode) ? HTMLNode : HTMLNode || EMPTY_STR);
+      break;
   }
 };
+
+FRAG_PROTO.resolveComponent = function (_component) {
+  let cacheContainer = CACHED,
+    key = _component.key;
+
+  if (key === null) {
+    const targetCache = Number.isInteger(_component.dom[0])
+      ? "scriped"
+      : "descriped";
+    cacheContainer = this.cache[targetCache];
+    key = _component.index;
+  }
+
+  return cacheContainer.has(key)
+    ? cacheContainer.get(key).update(_component.scripts)
+    : cacheContainer.set(key, new Component(_component)).get(key);
+};
+
+function spreadFrag(frag) {
+  const placeholder = frag.placeholder,
+    parentElement = placeholder.parentElement,
+    activeDOM = frag.currDOM;
+
+  if (activeDOM === null) return;
+  else if (activeDOM.constructor === String)
+    return (placeholder.textContent = activeDOM);
+  else if (IS_ARRAY(activeDOM)) {
+    const iterator = new Iterator(activeDOM);
+    while (iterator.next())
+      appendToFrag(parentElement, iterator.value().DOM, placeholder);
+  } else appendToFrag(parentElement, activeDOM, placeholder);
+}
+
+function appendToFrag(parentElement, DOMNode, placeholder) {
+  if (DOMNode.constructor === DOM_FRAG) {
+    parentElement.insertBefore(DOMNode.placeholder, placeholder);
+    spreadFrag(DOMNode);
+  } else parentElement.insertBefore(DOMNode, placeholder);
+}
+
+function clear(frag) {
+  const placeholder = frag.placeholder,
+    parentElement = placeholder.parentElement,
+    activeDOM = frag.currDOM;
+
+  if (activeDOM === null) return;
+  else if (activeDOM.constructor === String)
+    placeholder.textContent = EMPTY_STR;
+  else if (IS_ARRAY(activeDOM)) {
+    const iterator = new Iterator(activeDOM);
+    while (iterator.next()) removeFromFrag(parentElement, iterator.value().DOM);
+  } else removeFromFrag(parentElement, activeDOM);
+}
+
+function removeFromFrag(parentElement, DOMNode) {
+  if (DOMNode.constructor === DOM_FRAG) clear(DOM_FRAG);
+  else parentElement.removeChild(DOMNode);
+}
+
+function Iterator(arr) {
+  this.index = -1;
+  this.ref = arr;
+  // this.result = [];
+}
+
+Iterator.prototype.next = function () {
+  if (this.ref.length - this.index === 1) return false;
+  this.index++;
+  return true;
+};
+
+Iterator.prototype.value = function () {
+  return this.ref[this.index];
+};
+
+// Iterator.prototype.call = function (fn) {
+//   this.result[this.index] = fn(this.value());
+// };
