@@ -23,9 +23,7 @@ function Component(jsxRoot, props) {
   SELF.DOM = render(this, jsxRoot.dom); // HTMLElement || DOM_FRAG
 }
 
-const PROTO = Component.prototype;
-
-PROTO.update = function () {
+Component.prototype.update = function () {
   if (this.scripts !== undefined) {
     this.scripts = this.initScripts.apply(null);
     this.observers.scripts.forEach((S) => S());
@@ -99,19 +97,17 @@ function render(ctx, shadowHTMLElement) {
         DOMType = node.constructor;
 
       switch (DOMType) {
-        // Static Content
         case String:
           el.appendChild(new Text(node));
           break;
 
-        // Dynamic Content
         case Number:
           const frag = new DOM_FRAG();
           frag.append(ctx.scripts[node]);
           el.appendChild(frag.placeholder);
           spreadFrag(frag);
           ctx.observers.scripts.push(function () {
-            clear(frag);
+            clearFrag(frag);
             frag.append(ctx.scripts[node]);
             spreadFrag(frag);
           });
@@ -241,7 +237,7 @@ function appendToFrag(parentElement, DOMNode, placeholder) {
   } else parentElement.insertBefore(DOMNode, placeholder);
 }
 
-function clear(frag) {
+function clearFrag(frag) {
   const placeholder = frag.placeholder,
     parentElement = placeholder.parentElement,
     activeDOM = frag.currDOM;
@@ -256,7 +252,7 @@ function clear(frag) {
 }
 
 function removeFromFrag(parentElement, DOMNode) {
-  if (DOMNode.constructor === DOM_FRAG) clear(DOM_FRAG);
+  if (DOMNode.constructor === DOM_FRAG) clearFrag(DOM_FRAG);
   else parentElement.removeChild(DOMNode);
 }
 
