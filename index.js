@@ -4,7 +4,21 @@ const EMPTY_DOM_CONTAINER = [];
 const PRIVATE_KEY = "#Xtends";
 const CUSTOM_TAGS = /Frag|Switch|Case|Link/;
 const EVENT_EXP = /^on[A-Z]/;
+const CUSTOM_ATTRS = {};
 const CACHED = new Map();
+
+CUSTOM_ATTRS["key"] = function (el, ctx, attrValue) {};
+
+CUSTOM_ATTRS["ref"] = function (el, ctx, attrValue) {
+  ctx.scripts[attrValue].call(el, el);
+};
+
+CUSTOM_ATTRS["style"] = function (el, ctx, attrValue) {
+  Object.assign(el.style, ctx.scripts[attrValue]);
+  ctx.observers.scripts.push(function () {
+    Object.assign(el.style, ctx.scripts[attrValue]);
+  });
+};
 
 function Component(jsxRoot, props) {
   if (this.constructor !== Component) return new Component(jsxRoot);
@@ -14,12 +28,12 @@ function Component(jsxRoot, props) {
   }
 
   const SELF = this;
-  SELF.component = jsxRoot.components;
   if (jsxRoot.scripts) {
     SELF.observers = { scripts: [], components: new Set() };
     SELF.initScripts = jsxRoot.scripts;
     SELF.scripts = SELF.initScripts.apply(null);
   }
+  SELF.component = jsxRoot.components;
   SELF.DOM = render(this, jsxRoot.dom); // HTMLElement || DOM_FRAG
 }
 
@@ -35,29 +49,26 @@ Component.prototype.update = function () {
 
 function render(ctx, shadowHTMLElement) {
   const tag = shadowHTMLElement[0],
-    attrs = shadowHTMLElement[1] || {},
+    attrs = shadowHTMLElement[1],
     children = shadowHTMLElement[2];
 
   if (Number.isInteger(tag)) {
-    let needToUpdate = false;
-
-    const keys = new Iterator(Object.keys(attrs));
-    while (keys.next()) {
-      const key = keys.value(),
-        value = attrs[key];
-      if (Number.isInteger(value)) {
-        let currentValue = ctx.scripts[value];
-        delete attrs[key];
-        Object.defineProperty(attrs, key, {
-          get() {
+    let C;
+    if (attrs) {
+      const keys = new Iterator(Object.keys(attrs));
+      while (keys.next()) {
+        const key = keys.value(),
+          value = attrs[key];
+        if (Number.isInteger(value)) {
+          attrs[key] = ctx.scripts[value];
+          ctx.observers.scripts.push(function () {
             const newVal = ctx.scripts[value];
-            if (newVal !== currentValue) {
-              needToUpdate = true;
-              currentValue = newVal;
+            if (attrs[key] !== newVal) {
+              attrs[key] = newVal;
+              C.update();
             }
-            return currentValue;
-          },
-        });
+          });
+        }
       }
     }
 
@@ -76,14 +87,7 @@ function render(ctx, shadowHTMLElement) {
       });
     }
 
-    const C = new Component(ctx.components[tag], attrs),
-      updateCurrentComponent = () => C.update();
-
-    ctx.observers.scripts.push(function () {
-      needToUpdate && ctx.observers.components.push(updateCurrentComponent);
-      needToUpdate = false;
-    });
-
+    C = new Component(ctx.components[tag], attrs);
     return C.DOM;
   } else if (CUSTOM_TAGS.test(tag))
     return handleCustomTag(shadowHTMLElement, ctx);
@@ -123,44 +127,30 @@ function render(ctx, shadowHTMLElement) {
     }
   }
 
-  attrs.hasOwnProperty(PRIVATE_KEY) &&
+  if (attrs) {
     attrs[PRIVATE_KEY].forEach((OBJ) => Object.assign(attrs, OBJ));
 
-  const keys = Object.keys(attrs).filter((d) => d !== PRIVATE_KEY),
-    iterator = new Iterator(keys);
+    const keys = Object.keys(attrs).filter((d) => d !== PRIVATE_KEY),
+      iterator = new Iterator(keys);
 
-  while (iterator.next()) {
-    const attrName = iterator.value(),
-      attrValue = attrs[attrName];
-
-    switch (true) {
-      case EVENT_EXP.test(attrName):
+    while (iterator.next()) {
+      const attrName = iterator.value(),
+        attrValue = attrs[attrName];
+      if (EVENT_EXP.test(attrName)) {
         const evType = attrName.slice(2).toLowerCase();
         el.addEventListener(evType, function () {
           ctx.scripts[attrValue].apply(el, Array.from(arguments));
         });
-        break;
-
-      case attrName === "ref":
-        ctx.scripts[attrValue].call(el, el);
-        break;
-
-      case attrName === "style":
-        Object.assign(el.style, ctx.scripts[attrValue]);
-        ctx.observers.scripts.push(function () {
-          Object.assign(el.style, ctx.scripts[attrValue]);
-        });
-        break;
-
-      default:
-        el[attrName] = attrValue;
+      } else if (CUSTOM_ATTRS[attrName] !== undefined)
+        CUSTOM_ATTRS[attrName](el, ctx, attrValue);
+      else el[attrName] = attrValue;
     }
   }
 
   return el;
 }
 
-function handleCustomTag(tag, currRoot) {}
+function handleCustomTag(tag, ctx) {}
 
 function DOM_FRAG() {
   this.placeholder = new Text();
