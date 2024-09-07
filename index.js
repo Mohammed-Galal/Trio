@@ -6,11 +6,15 @@ const CUSTOM_TAGS = /Frag|Switch|Case|Link/;
 const EVENT_EXP = /^on[A-Z]/;
 const CACHED = new Map();
 
-function Component(jsxRoot) {
+function Component(jsxRoot, props) {
   if (this.constructor !== Component) return new Component(jsxRoot);
+  else if (jsxRoot.constructor.name === "Function") {
+    const result = jsxRoot(props);
+    jsxRoot = result;
+  }
+
   const SELF = this;
   SELF.component = jsxRoot.components;
-  // debugger;
   if (jsxRoot.scripts) {
     SELF.observers = { scripts: [], components: new Set() };
     SELF.initScripts = jsxRoot.scripts;
@@ -32,10 +36,58 @@ PROTO.update = function () {
 };
 
 function render(ctx, shadowHTMLElement) {
-  const [tag, attrs, children] = shadowHTMLElement;
+  const tag = shadowHTMLElement[0],
+    attrs = shadowHTMLElement[1] || {},
+    children = shadowHTMLElement[2];
 
-  if (Number.isInteger(tag)) return new Component(shadowHTMLElement, ctx).DOM;
-  else if (CUSTOM_TAGS.test(tag))
+  if (Number.isInteger(tag)) {
+    let needToUpdate = false;
+
+    const keys = new Iterator(Object.keys(attrs));
+    while (keys.next()) {
+      const key = keys.value(),
+        value = attrs[key];
+      if (Number.isInteger(value)) {
+        let currentValue = ctx.scripts[value];
+        delete attrs[key];
+        Object.defineProperty(attrs, key, {
+          get() {
+            const newVal = ctx.scripts[value];
+            if (newVal !== currentValue) {
+              needToUpdate = true;
+              currentValue = newVal;
+            }
+            return currentValue;
+          },
+        });
+      }
+    }
+
+    if (children) {
+      const Children = new DOM_FRAG();
+      let didRendered = false;
+      Object.defineProperty(attrs, "Children", {
+        get() {
+          if (!didRendered) {
+            const nodes = new Iterator(children);
+            while (nodes.next()) frag.append(render(ctx, nodes.value()));
+            didRendered = true;
+          }
+          return Children;
+        },
+      });
+    }
+
+    const C = new Component(ctx.components[tag], attrs),
+      updateCurrentComponent = () => C.update();
+
+    ctx.observers.scripts.push(function () {
+      needToUpdate && ctx.observers.components.push(updateCurrentComponent);
+      needToUpdate = false;
+    });
+
+    return C.DOM;
+  } else if (CUSTOM_TAGS.test(tag))
     return handleCustomTag(shadowHTMLElement, ctx);
 
   const el = document.createElement(tag);
@@ -75,38 +127,37 @@ function render(ctx, shadowHTMLElement) {
     }
   }
 
-  if (attrs) {
-    attrs[PRIVATE_KEY].forEach((OBJ) => Object.assign(el, OBJ));
+  attrs.hasOwnProperty(PRIVATE_KEY) &&
+    attrs[PRIVATE_KEY].forEach((OBJ) => Object.assign(attrs, OBJ));
 
-    const keys = Object.keys(attrs).filter((d) => d !== PRIVATE_KEY),
-      iterator = new Iterator(keys);
+  const keys = Object.keys(attrs).filter((d) => d !== PRIVATE_KEY),
+    iterator = new Iterator(keys);
 
-    while (iterator.next()) {
-      const attrName = iterator.value(),
-        attrValue = attrs[attrName];
+  while (iterator.next()) {
+    const attrName = iterator.value(),
+      attrValue = attrs[attrName];
 
-      switch (true) {
-        case EVENT_EXP.test(attrName):
-          const evType = attrName.slice(2).toLowerCase();
-          el.addEventListener(evType, function () {
-            ctx.scripts[attrValue].apply(el, Array.from(arguments));
-          });
-          break;
+    switch (true) {
+      case EVENT_EXP.test(attrName):
+        const evType = attrName.slice(2).toLowerCase();
+        el.addEventListener(evType, function () {
+          ctx.scripts[attrValue].apply(el, Array.from(arguments));
+        });
+        break;
 
-        case attrName === "ref":
-          ctx.scripts[attrValue].call(el, el);
-          break;
+      case attrName === "ref":
+        ctx.scripts[attrValue].call(el, el);
+        break;
 
-        case attrName === "style":
+      case attrName === "style":
+        Object.assign(el.style, ctx.scripts[attrValue]);
+        ctx.observers.scripts.push(function () {
           Object.assign(el.style, ctx.scripts[attrValue]);
-          ctx.observers.scripts.push(function () {
-            Object.assign(el.style, ctx.scripts[attrValue]);
-          });
-          break;
+        });
+        break;
 
-        default:
-          el[attrName] = attrValue;
-      }
+      default:
+        el[attrName] = attrValue;
     }
   }
 
