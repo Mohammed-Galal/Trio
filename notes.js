@@ -19,16 +19,6 @@ function functionComponent(props) {
 
   const incremenet = () => count++ || true;
 
-  useWatcher(function (track, call) {
-    // false => before first Paint and Applying Updates
-    // true => after first Paint and Applying Updates
-    track([count]) && call(false, logCount);
-  });
-
-  function logCount() {
-    console.log(count);
-  }
-
   setInterval(useForce(incremenet), 1000);
 
   return (

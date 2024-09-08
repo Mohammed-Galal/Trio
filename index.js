@@ -1,11 +1,15 @@
+const APP = new (function TRIO() {})();
 const IS_ARRAY = Array.isArray;
 const EMPTY_STR = "";
-const EMPTY_DOM_CONTAINER = [];
 const PRIVATE_KEY = "#Xtends";
 const CUSTOM_TAGS = /Frag|Switch|Case|Link/;
 const EVENT_EXP = /^on[A-Z]/;
 const CUSTOM_ATTRS = {};
 const CACHED = new Map();
+
+let currentCTX = null;
+
+export default APP;
 
 CUSTOM_ATTRS["key"] = function (el, ctx, attrValue) {};
 
@@ -23,7 +27,9 @@ CUSTOM_ATTRS["style"] = function (el, ctx, attrValue) {
 function Component(jsxRoot, props) {
   if (this.constructor !== Component) return new Component(jsxRoot);
   else if (jsxRoot.constructor.name === "Function") {
+    currentCTX = this;
     const result = jsxRoot(props);
+    currentCTX = null;
     jsxRoot = result;
   }
 
@@ -37,15 +43,15 @@ function Component(jsxRoot, props) {
   SELF.DOM = render(this, jsxRoot.dom); // HTMLElement || DOM_FRAG
 }
 
-Component.prototype.update = function () {
-  if (this.scripts !== undefined) {
-    this.scripts = this.initScripts.apply(null);
-    this.observers.scripts.forEach((S) => S());
-    this.observers.components.forEach((C) => C());
-    this.observers.components.clear();
+function update(ctx) {
+  if (ctx.scripts !== undefined) {
+    ctx.scripts = ctx.initScripts.apply(null);
+    ctx.observers.scripts.forEach((S) => S());
+    ctx.observers.components.forEach((C) => C());
+    ctx.observers.components.clear();
   }
-  return this;
-};
+  return ctx;
+}
 
 function render(ctx, shadowHTMLElement) {
   const tag = shadowHTMLElement[0],
@@ -65,7 +71,7 @@ function render(ctx, shadowHTMLElement) {
             const newVal = ctx.scripts[value];
             if (attrs[key] !== newVal) {
               attrs[key] = newVal;
-              C.update();
+              update(C);
             }
           });
         }
@@ -139,7 +145,9 @@ function render(ctx, shadowHTMLElement) {
       if (EVENT_EXP.test(attrName)) {
         const evType = attrName.slice(2).toLowerCase();
         el.addEventListener(evType, function () {
-          ctx.scripts[attrValue].apply(el, Array.from(arguments));
+          const evHandler = ctx.scripts[attrValue],
+            result = evHandler.apply(el, Array.from(arguments));
+          result === true && update(ctx);
         });
       } else if (CUSTOM_ATTRS[attrName] !== undefined)
         CUSTOM_ATTRS[attrName](el, ctx, attrValue);
@@ -201,7 +209,7 @@ FRAG_PROTO.resolveComponent = function (_component) {
   }
 
   return cacheContainer.has(key)
-    ? cacheContainer.get(key).update(_component.scripts)
+    ? update(cacheContainer.get(key))
     : cacheContainer.set(key, new Component(_component)).get(key);
 };
 
@@ -265,3 +273,15 @@ Iterator.prototype.value = function () {
 // Iterator.prototype.call = function (fn) {
 //   this.result[this.index] = fn(this.value());
 // };
+
+APP.forceUpdate = function (fn) {
+  // !validate params
+  // !check for active Context
+
+  const ctx = currentCTX;
+
+  return () => {
+    fn();
+    update(ctx);
+  };
+};
