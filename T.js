@@ -1,19 +1,14 @@
-const complicatedArray = [1, 2, [3, 4], 5];
+const PENDING_UPDATES = new Set();
 
-function one(arr) {
-  let index = 0;
-  while (index < arr.length) {
-    const item = arr[index++];
-    if (Array.isArray(item)) one(item);
-    else console.log(item);
-  }
+function batchUpdate() {
+  // Apply all pending updates at once
+  PENDING_UPDATES.forEach((updateFn) => updateFn());
+  PENDING_UPDATES.clear();
 }
 
-function two(arr) {
-  (function reCall(index) {
-    const item = arr[index++];
-    if (Array.isArray(item)) one(item);
-    else console.log(item);
-    index < arr.length && reCall(index + 1);
-  })(0);
+function requestUpdate(updateFn) {
+  PENDING_UPDATES.push(updateFn);
+
+  // Schedule a render on the next frame
+  requestAnimationFrame(batchUpdate);
 }
