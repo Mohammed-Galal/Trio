@@ -46,122 +46,17 @@ function Component(jsxRoot, props) {
   SELF.DOM = render(this, jsxRoot.dom); // HTMLElement || DOM_FRAG
 }
 
-function requestUpdate(ctx) {
-  if (ctx.scripts !== undefined) {
-    ctx.scripts = ctx.initScripts.apply(null);
-    ctx.observers.forEach((S) => S());
-    ctx.pendingUpdates.forEach(requestUpdate);
-    ctx.pendingUpdates.clear();
-  }
-  return ctx;
-}
+APP.forceUpdate = function (fn) {
+  // !validate params
+  // !check for active Context
 
-function render(ctx, shadowHTMLElement) {
-  const tag = shadowHTMLElement[0],
-    attrs = shadowHTMLElement[1],
-    children = shadowHTMLElement[2];
+  const ctx = currentCTX;
 
-  if (Number.isInteger(tag)) {
-    let C;
-    if (attrs) {
-      const keys = new Iterator(Object.keys(attrs));
-      while (keys.next()) {
-        const key = keys.value(),
-          value = attrs[key];
-        if (Number.isInteger(value)) {
-          attrs[key] = ctx.scripts[value];
-          ctx.observers.push(function () {
-            const newVal = ctx.scripts[value];
-            if (attrs[key] !== newVal) {
-              attrs[key] = newVal;
-              ctx.pendingUpdates.add(C);
-            }
-          });
-        }
-      }
-    }
-
-    if (children) {
-      const Children = new DOM_FRAG();
-      let didRendered = false;
-      Object.defineProperty(attrs, "Children", {
-        get() {
-          if (!didRendered) {
-            const nodes = new Iterator(children);
-            while (nodes.next()) frag.append(render(ctx, nodes.value()));
-            didRendered = true;
-          }
-          return Children;
-        },
-      });
-    }
-
-    C = new Component(ctx.components[tag], attrs);
-    return C.DOM;
-  } else if (CUSTOM_TAGS.test(tag))
-    return handleCustomTag(shadowHTMLElement, ctx);
-
-  const el = document.createElement(tag);
-
-  if (children) {
-    const iterator = new Iterator(children);
-    while (iterator.next()) {
-      const node = iterator.value(),
-        DOMType = node.constructor;
-
-      switch (DOMType) {
-        case String:
-          el.appendChild(new Text(node));
-          break;
-
-        case Number:
-          const frag = new DOM_FRAG();
-          frag.append(ctx.scripts[node]);
-          el.appendChild(frag.placeholder);
-          spreadFrag(frag);
-          ctx.observers.push(function () {
-            clearFrag(frag);
-            frag.append(ctx.scripts[node]);
-            spreadFrag(frag);
-          });
-          break;
-
-        default:
-          const result = render(ctx, node);
-          if (result.constructor === DOM_FRAG) {
-            el.appendChild(result.placeholder);
-            spreadFrag(result);
-          } else el.appendChild(result);
-      }
-    }
-  }
-
-  if (attrs) {
-    attrs[PRIVATE_KEY].forEach((OBJ) => Object.assign(attrs, OBJ));
-
-    const keys = Object.keys(attrs).filter((d) => d !== PRIVATE_KEY),
-      iterator = new Iterator(keys);
-
-    while (iterator.next()) {
-      const attrName = iterator.value(),
-        attrValue = attrs[attrName];
-      if (EVENT_EXP.test(attrName)) {
-        const evType = attrName.slice(2).toLowerCase();
-        el.addEventListener(evType, function () {
-          const evHandler = ctx.scripts[attrValue],
-            result = evHandler.apply(el, Array.from(arguments));
-          result === true && requestUpdate(ctx);
-        });
-      } else if (CUSTOM_ATTRS[attrName] !== undefined)
-        CUSTOM_ATTRS[attrName](el, ctx, attrValue);
-      else el[attrName] = attrValue;
-    }
-  }
-
-  return el;
-}
-
-function handleCustomTag(tag, ctx) {}
+  return () => {
+    fn();
+    requestUpdate(ctx);
+  };
+};
 
 function DOM_FRAG() {
   this.placeholder = new Text();
@@ -277,14 +172,119 @@ Iterator.prototype.value = function () {
 //   this.result[this.index] = fn(this.value());
 // };
 
-APP.forceUpdate = function (fn) {
-  // !validate params
-  // !check for active Context
+function requestUpdate(ctx) {
+  if (ctx.scripts !== undefined) {
+    ctx.scripts = ctx.initScripts.apply(null);
+    ctx.observers.forEach((S) => S());
+    ctx.pendingUpdates.forEach(requestUpdate);
+    ctx.pendingUpdates.clear();
+  }
+  return ctx;
+}
 
-  const ctx = currentCTX;
+function handleCustomTag(tag, ctx) {}
 
-  return () => {
-    fn();
-    requestUpdate(ctx);
-  };
-};
+function render(ctx, shadowHTMLElement) {
+  const tag = shadowHTMLElement[0],
+    attrs = shadowHTMLElement[1],
+    children = shadowHTMLElement[2];
+
+  if (Number.isInteger(tag)) {
+    let C;
+    if (attrs) {
+      const keys = new Iterator(Object.keys(attrs));
+      while (keys.next()) {
+        const key = keys.value(),
+          value = attrs[key];
+        if (Number.isInteger(value)) {
+          attrs[key] = ctx.scripts[value];
+          ctx.observers.push(function () {
+            const newVal = ctx.scripts[value];
+            if (attrs[key] !== newVal) {
+              attrs[key] = newVal;
+              ctx.pendingUpdates.add(C);
+            }
+          });
+        }
+      }
+    }
+
+    if (children) {
+      const Children = new DOM_FRAG();
+      let didRendered = false;
+      Object.defineProperty(attrs, "Children", {
+        get() {
+          if (!didRendered) {
+            const nodes = new Iterator(children);
+            while (nodes.next()) frag.append(render(ctx, nodes.value()));
+            didRendered = true;
+          }
+          return Children;
+        },
+      });
+    }
+
+    C = new Component(ctx.components[tag], attrs);
+    return C.DOM;
+  } else if (CUSTOM_TAGS.test(tag))
+    return handleCustomTag(shadowHTMLElement, ctx);
+
+  const el = document.createElement(tag);
+
+  if (children) {
+    const iterator = new Iterator(children);
+    while (iterator.next()) {
+      const node = iterator.value(),
+        DOMType = node.constructor;
+
+      switch (DOMType) {
+        case String:
+          el.appendChild(new Text(node));
+          break;
+
+        case Number:
+          const frag = new DOM_FRAG();
+          frag.append(ctx.scripts[node]);
+          el.appendChild(frag.placeholder);
+          spreadFrag(frag);
+          ctx.observers.push(function () {
+            clearFrag(frag);
+            frag.append(ctx.scripts[node]);
+            spreadFrag(frag);
+          });
+          break;
+
+        default:
+          const result = render(ctx, node);
+          if (result.constructor === DOM_FRAG) {
+            el.appendChild(result.placeholder);
+            spreadFrag(result);
+          } else el.appendChild(result);
+      }
+    }
+  }
+
+  if (attrs) {
+    attrs[PRIVATE_KEY].forEach((OBJ) => Object.assign(attrs, OBJ));
+
+    const keys = Object.keys(attrs).filter((d) => d !== PRIVATE_KEY),
+      iterator = new Iterator(keys);
+
+    while (iterator.next()) {
+      const attrName = iterator.value(),
+        attrValue = attrs[attrName];
+      if (EVENT_EXP.test(attrName)) {
+        const evType = attrName.slice(2).toLowerCase();
+        el.addEventListener(evType, function () {
+          const evHandler = ctx.scripts[attrValue],
+            result = evHandler.apply(el, Array.from(arguments));
+          result === true && requestUpdate(ctx);
+        });
+      } else if (CUSTOM_ATTRS[attrName] !== undefined)
+        CUSTOM_ATTRS[attrName](el, ctx, attrValue);
+      else el[attrName] = attrValue;
+    }
+  }
+
+  return el;
+}
