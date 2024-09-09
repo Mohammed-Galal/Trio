@@ -60,7 +60,7 @@ APP.forceUpdate = function (fn) {
 
 function DOM_FRAG() {
   this.placeholder = new Text();
-  this.cache = { scriped: new Map(), descriped: new Map() };
+  this.cache = { "instance": new Map(), ref: new Map() };
   // Array (Components) || Component || String: Primitive Value
   this.currDOM = null;
 }
@@ -100,8 +100,8 @@ FRAG_PROTO.resolveComponent = function (_component) {
 
   if (key === null) {
     const targetCache = Number.isInteger(_component.dom[0])
-      ? "scriped"
-      : "descriped";
+      ? "instance"
+      : "ref";
     cacheContainer = this.cache[targetCache];
     key = _component.index;
   }
