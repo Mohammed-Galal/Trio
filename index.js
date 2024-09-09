@@ -19,7 +19,7 @@ CUSTOM_ATTRS["ref"] = function (el, ctx, attrValue) {
 
 CUSTOM_ATTRS["style"] = function (el, ctx, attrValue) {
   Object.assign(el.style, ctx.scripts[attrValue]);
-  ctx.observers.scripts.push(function () {
+  ctx.observers.push(function () {
     Object.assign(el.style, ctx.scripts[attrValue]);
   });
 };
@@ -35,20 +35,23 @@ function Component(jsxRoot, props) {
 
   const SELF = this;
   if (jsxRoot.scripts) {
-    SELF.observers = { scripts: [], components: new Set() };
     SELF.initScripts = jsxRoot.scripts;
     SELF.scripts = SELF.initScripts.apply(null);
+    // scripts Observer
+    SELF.observers = [];
+    // components Observer
+    SELF.pendingUpdates = new Set();
   }
   SELF.component = jsxRoot.components;
   SELF.DOM = render(this, jsxRoot.dom); // HTMLElement || DOM_FRAG
 }
 
-function update(ctx) {
+function requestUpdate(ctx) {
   if (ctx.scripts !== undefined) {
     ctx.scripts = ctx.initScripts.apply(null);
-    ctx.observers.scripts.forEach((S) => S());
-    ctx.observers.components.forEach((C) => C());
-    ctx.observers.components.clear();
+    ctx.observers.forEach((S) => S());
+    ctx.pendingUpdates.forEach(requestUpdate);
+    ctx.pendingUpdates.clear();
   }
   return ctx;
 }
@@ -67,11 +70,11 @@ function render(ctx, shadowHTMLElement) {
           value = attrs[key];
         if (Number.isInteger(value)) {
           attrs[key] = ctx.scripts[value];
-          ctx.observers.scripts.push(function () {
+          ctx.observers.push(function () {
             const newVal = ctx.scripts[value];
             if (attrs[key] !== newVal) {
               attrs[key] = newVal;
-              update(C);
+              ctx.pendingUpdates.add(C);
             }
           });
         }
@@ -116,7 +119,7 @@ function render(ctx, shadowHTMLElement) {
           frag.append(ctx.scripts[node]);
           el.appendChild(frag.placeholder);
           spreadFrag(frag);
-          ctx.observers.scripts.push(function () {
+          ctx.observers.push(function () {
             clearFrag(frag);
             frag.append(ctx.scripts[node]);
             spreadFrag(frag);
@@ -147,7 +150,7 @@ function render(ctx, shadowHTMLElement) {
         el.addEventListener(evType, function () {
           const evHandler = ctx.scripts[attrValue],
             result = evHandler.apply(el, Array.from(arguments));
-          result === true && update(ctx);
+          result === true && requestUpdate(ctx);
         });
       } else if (CUSTOM_ATTRS[attrName] !== undefined)
         CUSTOM_ATTRS[attrName](el, ctx, attrValue);
@@ -209,7 +212,7 @@ FRAG_PROTO.resolveComponent = function (_component) {
   }
 
   return cacheContainer.has(key)
-    ? update(cacheContainer.get(key))
+    ? requestUpdate(cacheContainer.get(key))
     : cacheContainer.set(key, new Component(_component)).get(key);
 };
 
@@ -282,6 +285,6 @@ APP.forceUpdate = function (fn) {
 
   return () => {
     fn();
-    update(ctx);
+    requestUpdate(ctx);
   };
 };
