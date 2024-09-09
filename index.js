@@ -99,10 +99,10 @@ FRAG_PROTO.resolveComponent = function (_component) {
     key = _component.key;
 
   if (key === null) {
-    const targetCache = Number.isInteger(_component.dom[0])
+    const cacheType = Number.isInteger(_component.dom[0])
       ? "instance"
       : "ref";
-    cacheContainer = this.cache[targetCache];
+    cacheContainer = this.cache[cacheType];
     key = _component.index;
   }
 
