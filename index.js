@@ -1,3 +1,4 @@
+const ERR = new Error();
 const APP = new (function TRIO() {})();
 const IS_ARRAY = Array.isArray;
 const EMPTY_STR = "";
@@ -10,8 +11,6 @@ const CACHED = new Map();
 let currentCTX = null;
 
 export default APP;
-
-CUSTOM_ATTRS["key"] = function (el, ctx, attrValue) {};
 
 CUSTOM_ATTRS["ref"] = function (el, ctx, attrValue) {
   ctx.scripts[attrValue].call(el, el);
@@ -46,9 +45,13 @@ function Component(jsxRoot, props) {
   SELF.DOM = render(this, jsxRoot.dom); // HTMLElement || DOM_FRAG
 }
 
+const paramErr = {};
+paramErr.name = "useForce Hook Rules";
+paramErr.message = "";
 APP.forceUpdate = function (fn) {
-  // !validate params
-  // !check for active Context
+  // validate param & check for active Context
+  if (fn === undefined || fn.constructor === "Function" || currentCTX === null)
+    throw Object.assign(ERR, paramErr);
 
   const ctx = currentCTX;
 
@@ -60,7 +63,7 @@ APP.forceUpdate = function (fn) {
 
 function DOM_FRAG() {
   this.placeholder = new Text();
-  this.cache = { "instance": new Map(), ref: new Map() };
+  this.cache = { instance: new Map(), ref: new Map() };
   // Array (Components) || Component || String: Primitive Value
   this.currDOM = null;
 }
@@ -99,9 +102,7 @@ FRAG_PROTO.resolveComponent = function (_component) {
     key = _component.key;
 
   if (key === null) {
-    const cacheType = Number.isInteger(_component.dom[0])
-      ? "instance"
-      : "ref";
+    const cacheType = Number.isInteger(_component.dom[0]) ? "instance" : "ref";
     cacheContainer = this.cache[cacheType];
     key = _component.index;
   }
