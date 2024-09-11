@@ -282,10 +282,11 @@ function expandFrag(frag) {
 }
 
 function clearFrag(frag) {
-  const parentElement = frag.placeholder.parentElement,
+  const placeholder= frag.placeholder,
+   parentElement = placeholder.parentElement,
     childNodes = new Iterator(frag.currDOM);
 
-  frag.placeholder.textContent = EMPTY_STR;
+  placeholder.textContent = EMPTY_STR;
   while (childNodes.next()) {
     const childNode = childNodes.value();
     if (childNode.constructor === DOM_FRAG) clearFrag(childNode);
