@@ -14,8 +14,7 @@ paramErr.name = "useForce Hook Rules";
 paramErr.message = "";
 APP.forceUpdate = function (fn) {
   // validate param & check for active Context
-  if (fn === undefined || fn.constructor === "Function" || currentCTX === null)
-    throw Object.assign(ERR, paramErr);
+  if (typeof fn !== "function") throw Object.assign(ERR, paramErr);
 
   const ctx = currentCTX;
 
@@ -78,10 +77,10 @@ PROTO.createNode = function (node) {
 
     case Number:
       const frag = new DOM_FRAG();
-      frag.resolveContent(ctx.scripts[node]);
-      ctx.observers.push(function () {
+      frag.resolveContent(SELF.scripts[node]);
+      SELF.observers.push(function () {
         clearFrag(frag);
-        frag.resolveContent(ctx.scripts[node]);
+        frag.resolveContent(SELF.scripts[node]);
         expandFrag(frag);
       });
       return frag;
@@ -113,12 +112,12 @@ PROTO.createNode = function (node) {
           if (EVENT_EXP.test(attrName)) {
             const evType = attrName.slice(2).toLowerCase();
             el.addEventListener(evType, function () {
-              const evHandler = ctx.scripts[attrValue],
+              const evHandler = SELF.scripts[attrValue],
                 result = evHandler.apply(el, Array.from(arguments));
-              result === true && requestUpdate(ctx);
+              result === true && requestUpdate(SELF);
             });
           } else if (CUSTOM_ATTRS[attrName] !== undefined)
-            CUSTOM_ATTRS[attrName](el, ctx, attrValue);
+            CUSTOM_ATTRS[attrName](el, SELF, attrValue);
           else el[attrName] = attrValue;
         }
       }
@@ -136,7 +135,7 @@ PROTO.checkCase = function (childNode) {
 
   return function () {
     const testRes =
-      conditionRef === true ||
+      !!conditionRef ||
       (Number.isInteger(conditionRef) && ctx.scripts[conditionRef]);
 
     if (!didRendered) {
