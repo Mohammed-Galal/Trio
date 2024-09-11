@@ -3,7 +3,6 @@ const APP = new (function TRIO() {})();
 const IS_ARRAY = Array.isArray;
 const EMPTY_STR = "";
 const PRIVATE_KEY = "#Xtends";
-const CUSTOM_TAGS = /Frag|Switch|Case|Link/;
 const EVENT_EXP = /^on[A-Z]/;
 const CUSTOM_ATTRS = {};
 const CACHED = new Map();
@@ -22,6 +21,12 @@ CUSTOM_ATTRS["style"] = function (el, ctx, attrValue) {
     Object.assign(el.style, ctx.scripts[attrValue]);
   });
 };
+
+const switchEXP = "Switch",
+  caseEXP = "Case",
+  linkEXP = "Link",
+  anchorEXP = "a",
+  caseFiltration = (CN) => IS_ARRAY(CN) && CN[0] === caseEXP;
 
 function Component(jsxRoot, props) {
   if (this.constructor !== Component) return new Component(jsxRoot);
@@ -45,34 +50,95 @@ function Component(jsxRoot, props) {
   SELF.DOM = render(this, jsxRoot.dom); // HTMLElement || DOM_FRAG
 }
 
-const paramErr = {};
-paramErr.name = "useForce Hook Rules";
-paramErr.message = "";
-APP.forceUpdate = function (fn) {
-  // validate param & check for active Context
-  if (fn === undefined || fn.constructor === "Function" || currentCTX === null)
-    throw Object.assign(ERR, paramErr);
+const PROTO = Component.prototype;
 
-  const ctx = currentCTX;
+PROTO.createNode = function (node) {
+  const SELF = this,
+    nodeType = node.constructor;
 
-  return () => {
-    fn();
-    requestUpdate(ctx);
+  switch (nodeType) {
+    case String:
+      return new Text(node);
+
+    case Number:
+      const frag = new DOM_FRAG();
+      frag.resolveContent(ctx.scripts[node]);
+      ctx.observers.push(function () {
+        clearFrag(frag);
+        frag.resolveContent(ctx.scripts[node]);
+        expandFrag(frag);
+      });
+      return frag;
+
+    default:
+      const [tag, attrs, children] = node,
+        el = document.createElement(tag);
+
+      if (children) {
+        const iterator = new Iterator(children);
+        while (iterator.next()) {
+          const childNode = render(SELF, iterator.value());
+          if (childNode.constructor === DOM_FRAG) {
+            el.appendChild(childNode.placeholder);
+            expandFrag(childNode);
+          } else el.appendChild(childNode);
+        }
+      }
+
+      if (attrs) {
+        attrs[PRIVATE_KEY].forEach((OBJ) => Object.assign(attrs, OBJ));
+
+        const keys = Object.keys(attrs).filter((d) => d !== PRIVATE_KEY),
+          iterator = new Iterator(keys);
+
+        while (iterator.next()) {
+          const attrName = iterator.value(),
+            attrValue = attrs[attrName];
+          if (EVENT_EXP.test(attrName)) {
+            const evType = attrName.slice(2).toLowerCase();
+            el.addEventListener(evType, function () {
+              const evHandler = ctx.scripts[attrValue],
+                result = evHandler.apply(el, Array.from(arguments));
+              result === true && requestUpdate(ctx);
+            });
+          } else if (CUSTOM_ATTRS[attrName] !== undefined)
+            CUSTOM_ATTRS[attrName](el, ctx, attrValue);
+          else el[attrName] = attrValue;
+        }
+      }
+
+      return el;
+  }
+};
+
+PROTO.checkCase = function (childNode) {
+  const ctx = this,
+    conditionRef = childNode[1] ? childNode[1].test : true,
+    container = [];
+
+  let didRendered = false;
+
+  return function () {
+    const testRes =
+      conditionRef === true ||
+      (Number.isInteger(conditionRef) && ctx.scripts[conditionRef]);
+
+    if (!didRendered) {
+      const childNodes = childNode[2];
+      if (childNodes) {
+        const _iterator = new Iterator(childNodes);
+        while (_iterator.next())
+          container[container.length] = render(ctx, _iterator.value());
+      }
+      didRendered = true;
+    }
+
+    return testRes && container;
   };
 };
 
-function requestUpdate(ctx) {
-  if (ctx.scripts !== undefined) {
-    ctx.scripts = ctx.initScripts.apply(null);
-    ctx.observers.forEach((S) => S());
-    ctx.pendingUpdates.forEach(requestUpdate);
-    ctx.pendingUpdates.clear();
-  }
-  return ctx;
-}
-
 function render(ctx, shadowHTMLElement) {
-  let tag = shadowHTMLElement[0],
+  const tag = shadowHTMLElement[0],
     attrs = shadowHTMLElement[1],
     children = shadowHTMLElement[2];
 
@@ -107,7 +173,6 @@ function render(ctx, shadowHTMLElement) {
               const nodes = new Iterator(children);
               while (nodes.next()) {
                 const childNode = render(ctx, nodes.value());
-
                 if (childNode.constructor === DOM_FRAG) {
                   Children.appendChild(childNode.placeholder);
                   expandFrag(childNode);
@@ -124,74 +189,60 @@ function render(ctx, shadowHTMLElement) {
       C = new Component(ctx.components[tag], attrs);
       return C.DOM;
 
-    case tag === "Switch":
-      const frag = new DOM_FRAG();
+    case tag === switchEXP:
+      const frag = new DOM_FRAG(),
+        cases = children.filter(caseFiltration).map(ctx.checkCase, ctx);
+
+      let index = 0;
+      ctx.observers.push(function () {
+        clearFrag(frag);
+
+        while (cases.length > index) {
+          const result = cases[index++];
+          if (result === false) continue;
+          frag.append(result);
+          break;
+        }
+
+        expandFrag(frag);
+        index = 0;
+      });
+
       return frag;
 
-    case tag === "Link":
-      tag = "a";
+    case tag === linkEXP:
+      shadowHTMLElement[0] = anchorEXP;
     // handle rest of code
 
     default:
-      const el = document.createElement(tag);
-
-      if (children) {
-        const iterator = new Iterator(children);
-        while (iterator.next()) {
-          const node = iterator.value(),
-            DOMType = node.constructor;
-
-          switch (DOMType) {
-            case String:
-              el.appendChild(new Text(node));
-              break;
-
-            case Number:
-              const frag = new DOM_FRAG();
-              el.appendChild(frag.placeholder);
-              frag.resolveContent(ctx.scripts[node]);
-              expandFrag(frag);
-              ctx.observers.push(function () {
-                clearFrag(frag);
-                frag.resolveContent(ctx.scripts[node]);
-                expandFrag(frag);
-              });
-              break;
-
-            default:
-              const childNode = render(ctx, node);
-              if (childNode.constructor === DOM_FRAG) {
-                el.appendChild(childNode.placeholder);
-                expandFrag(childNode);
-              } else el.appendChild(childNode);
-          }
-        }
-      }
-
-      if (attrs) {
-        attrs[PRIVATE_KEY].forEach((OBJ) => Object.assign(attrs, OBJ));
-
-        const keys = Object.keys(attrs).filter((d) => d !== PRIVATE_KEY),
-          iterator = new Iterator(keys);
-
-        while (iterator.next()) {
-          const attrName = iterator.value(),
-            attrValue = attrs[attrName];
-          if (EVENT_EXP.test(attrName)) {
-            const evType = attrName.slice(2).toLowerCase();
-            el.addEventListener(evType, function () {
-              const evHandler = ctx.scripts[attrValue],
-                result = evHandler.apply(el, Array.from(arguments));
-              result === true && requestUpdate(ctx);
-            });
-          } else if (CUSTOM_ATTRS[attrName] !== undefined)
-            CUSTOM_ATTRS[attrName](el, ctx, attrValue);
-          else el[attrName] = attrValue;
-        }
-      }
-
-      return el;
+      return ctx.createNode(shadowHTMLElement);
   }
+}
+
+const paramErr = {};
+paramErr.name = "useForce Hook Rules";
+paramErr.message = "";
+APP.forceUpdate = function (fn) {
+  // validate param & check for active Context
+  if (fn === undefined || fn.constructor === "Function" || currentCTX === null)
+    throw Object.assign(ERR, paramErr);
+
+  const ctx = currentCTX;
+
+  return () => {
+    fn();
+    requestUpdate(ctx);
+  };
+};
+
+function requestUpdate(ctx) {
+  if (ctx.scripts !== undefined) {
+    ctx.scripts = ctx.initScripts.apply(null);
+    ctx.observers.forEach((S) => S());
+    ctx.pendingUpdates.forEach(requestUpdate);
+    ctx.pendingUpdates.clear();
+  }
+  return ctx;
 }
 
 // ===================
@@ -223,7 +274,11 @@ function DOM_FRAG() {
 const FRAG_PROTO = DOM_FRAG.prototype;
 
 FRAG_PROTO.append = function (HTMLNode) {
-  this.currDOM.push(HTMLNode);
+  const SELF = this;
+  if (IS_ARRAY(HTMLNode)) {
+    const iterator = new Iterator(HTMLNode);
+    while (iterator.next()) SELF.append(iterator.value());
+  } else SELF.currDOM.push(HTMLNode);
 };
 
 FRAG_PROTO.resolveContent = function (content) {
@@ -282,8 +337,8 @@ function expandFrag(frag) {
 }
 
 function clearFrag(frag) {
-  const placeholder= frag.placeholder,
-   parentElement = placeholder.parentElement,
+  const placeholder = frag.placeholder,
+    parentElement = placeholder.parentElement,
     childNodes = new Iterator(frag.currDOM);
 
   placeholder.textContent = EMPTY_STR;
