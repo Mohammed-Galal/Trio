@@ -72,120 +72,127 @@ function requestUpdate(ctx) {
 }
 
 function render(ctx, shadowHTMLElement) {
-  const tag = shadowHTMLElement[0],
+  let tag = shadowHTMLElement[0],
     attrs = shadowHTMLElement[1],
     children = shadowHTMLElement[2];
 
-  if (Number.isInteger(tag)) {
-    let C;
-    if (attrs) {
-      const keys = new Iterator(Object.keys(attrs));
-      while (keys.next()) {
-        const key = keys.value(),
-          value = attrs[key];
-        if (Number.isInteger(value)) {
-          attrs[key] = ctx.scripts[value];
-          ctx.observers.push(function () {
-            const newVal = ctx.scripts[value];
-            if (attrs[key] !== newVal) {
-              attrs[key] = newVal;
-              ctx.pendingUpdates.add(C);
-            }
-          });
+  switch (true) {
+    case Number.isInteger(tag):
+      let C;
+      if (attrs) {
+        const keys = new Iterator(Object.keys(attrs));
+        while (keys.next()) {
+          const key = keys.value(),
+            value = attrs[key];
+          if (Number.isInteger(value)) {
+            attrs[key] = ctx.scripts[value];
+            ctx.observers.push(function () {
+              const newVal = ctx.scripts[value];
+              if (attrs[key] !== newVal) {
+                attrs[key] = newVal;
+                ctx.pendingUpdates.add(C);
+              }
+            });
+          }
         }
       }
-    }
 
-    if (children) {
-      const Children = new DocumentFragment();
-      let didRendered = false;
+      if (children) {
+        const Children = new DocumentFragment();
+        let didRendered = false;
 
-      Object.defineProperty(attrs, "Children", {
-        get() {
-          if (!didRendered) {
-            const nodes = new Iterator(children);
-            while (nodes.next()) {
-              const childNode = render(ctx, nodes.value());
+        Object.defineProperty(attrs, "Children", {
+          get() {
+            if (!didRendered) {
+              const nodes = new Iterator(children);
+              while (nodes.next()) {
+                const childNode = render(ctx, nodes.value());
 
-              if (childNode.constructor === DOM_FRAG) {
-                Children.appendChild(childNode.placeholder);
-                expandFrag(childNode);
-              } else Children.appendChild(childNode);
+                if (childNode.constructor === DOM_FRAG) {
+                  Children.appendChild(childNode.placeholder);
+                  expandFrag(childNode);
+                } else Children.appendChild(childNode);
+              }
+              didRendered = true;
             }
-            didRendered = true;
-          }
 
-          return Children;
-        },
-      });
-    }
-
-    C = new Component(ctx.components[tag], attrs);
-    return C.DOM;
-  } else if (CUSTOM_TAGS.test(tag))
-    return handleCustomTag(shadowHTMLElement, ctx);
-
-  const el = document.createElement(tag);
-
-  if (children) {
-    const iterator = new Iterator(children);
-    while (iterator.next()) {
-      const node = iterator.value(),
-        DOMType = node.constructor;
-
-      switch (DOMType) {
-        case String:
-          el.appendChild(new Text(node));
-          break;
-
-        case Number:
-          const frag = new DOM_FRAG();
-          el.appendChild(frag.placeholder);
-          frag.resolveContent(ctx.scripts[node]);
-          expandFrag(frag);
-          ctx.observers.push(function () {
-            clearFrag(frag);
-            frag.resolveContent(ctx.scripts[node]);
-            expandFrag(frag);
-          });
-          break;
-
-        default:
-          const childNode = render(ctx, node);
-          if (childNode.constructor === DOM_FRAG) {
-            el.appendChild(childNode.placeholder);
-            expandFrag(childNode);
-          } else el.appendChild(childNode);
-      }
-    }
-  }
-
-  if (attrs) {
-    attrs[PRIVATE_KEY].forEach((OBJ) => Object.assign(attrs, OBJ));
-
-    const keys = Object.keys(attrs).filter((d) => d !== PRIVATE_KEY),
-      iterator = new Iterator(keys);
-
-    while (iterator.next()) {
-      const attrName = iterator.value(),
-        attrValue = attrs[attrName];
-      if (EVENT_EXP.test(attrName)) {
-        const evType = attrName.slice(2).toLowerCase();
-        el.addEventListener(evType, function () {
-          const evHandler = ctx.scripts[attrValue],
-            result = evHandler.apply(el, Array.from(arguments));
-          result === true && requestUpdate(ctx);
+            return Children;
+          },
         });
-      } else if (CUSTOM_ATTRS[attrName] !== undefined)
-        CUSTOM_ATTRS[attrName](el, ctx, attrValue);
-      else el[attrName] = attrValue;
-    }
+      }
+
+      C = new Component(ctx.components[tag], attrs);
+      return C.DOM;
+
+    case tag === "Switch":
+      const frag = new DOM_FRAG();
+      return frag;
+
+    case tag === "Link":
+      tag = "a";
+    // handle rest of code
+
+    default:
+      const el = document.createElement(tag);
+
+      if (children) {
+        const iterator = new Iterator(children);
+        while (iterator.next()) {
+          const node = iterator.value(),
+            DOMType = node.constructor;
+
+          switch (DOMType) {
+            case String:
+              el.appendChild(new Text(node));
+              break;
+
+            case Number:
+              const frag = new DOM_FRAG();
+              el.appendChild(frag.placeholder);
+              frag.resolveContent(ctx.scripts[node]);
+              expandFrag(frag);
+              ctx.observers.push(function () {
+                clearFrag(frag);
+                frag.resolveContent(ctx.scripts[node]);
+                expandFrag(frag);
+              });
+              break;
+
+            default:
+              const childNode = render(ctx, node);
+              if (childNode.constructor === DOM_FRAG) {
+                el.appendChild(childNode.placeholder);
+                expandFrag(childNode);
+              } else el.appendChild(childNode);
+          }
+        }
+      }
+
+      if (attrs) {
+        attrs[PRIVATE_KEY].forEach((OBJ) => Object.assign(attrs, OBJ));
+
+        const keys = Object.keys(attrs).filter((d) => d !== PRIVATE_KEY),
+          iterator = new Iterator(keys);
+
+        while (iterator.next()) {
+          const attrName = iterator.value(),
+            attrValue = attrs[attrName];
+          if (EVENT_EXP.test(attrName)) {
+            const evType = attrName.slice(2).toLowerCase();
+            el.addEventListener(evType, function () {
+              const evHandler = ctx.scripts[attrValue],
+                result = evHandler.apply(el, Array.from(arguments));
+              result === true && requestUpdate(ctx);
+            });
+          } else if (CUSTOM_ATTRS[attrName] !== undefined)
+            CUSTOM_ATTRS[attrName](el, ctx, attrValue);
+          else el[attrName] = attrValue;
+        }
+      }
+
+      return el;
   }
-
-  return el;
 }
-
-function handleCustomTag(tag, ctx) {}
 
 // ===================
 function Iterator(arr) {
