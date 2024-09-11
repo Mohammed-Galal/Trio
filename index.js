@@ -1,5 +1,5 @@
 const ERR = new Error();
-const APP = new (function TRIO() {})();
+const APP = new (function APP() {})();
 const IS_ARRAY = Array.isArray;
 const EMPTY_STR = "";
 const PRIVATE_KEY = "#Xtends";
