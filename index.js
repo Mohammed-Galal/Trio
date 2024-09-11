@@ -61,118 +61,6 @@ APP.forceUpdate = function (fn) {
   };
 };
 
-function DOM_FRAG() {
-  this.placeholder = new Text();
-  this.cache = { instance: new Map(), ref: new Map() };
-  // Array (Components) || Component || String: Primitive Value
-  this.currDOM = null;
-}
-
-const FRAG_PROTO = DOM_FRAG.prototype;
-
-// append => replaces current active Node
-// whenever this function gets invoked, it removes the current Active DOM, and replaces it with the Content
-FRAG_PROTO.append = function (HTMLNode) {
-  const SELF = this;
-
-  switch (HTMLNode.constructor) {
-    // jsxRoots Array
-    case IS_ARRAY(HTMLNode):
-      const result = (SELF.currDOM = []),
-        iterator = new Iterator(HTMLNode);
-      while (iterator.next())
-        result[iterator.index] = SELF.resolveComponent(iterator.value());
-      break;
-
-    // jsxRoot
-    case Object:
-      SELF.currDOM = resolveComponent(HTMLNode);
-      break;
-
-    default:
-      SELF.currDOM =
-        EMPTY_STR +
-        (Number.isInteger(HTMLNode) ? HTMLNode : HTMLNode || EMPTY_STR);
-      break;
-  }
-};
-
-FRAG_PROTO.resolveComponent = function (_component) {
-  let cacheContainer = CACHED,
-    key = _component.key;
-
-  if (key === null) {
-    const cacheType = Number.isInteger(_component.dom[0]) ? "instance" : "ref";
-    cacheContainer = this.cache[cacheType];
-    key = _component.index;
-  }
-
-  return cacheContainer.has(key)
-    ? requestUpdate(cacheContainer.get(key))
-    : cacheContainer.set(key, new Component(_component)).get(key);
-};
-
-function spreadFrag(frag) {
-  const placeholder = frag.placeholder,
-    parentElement = placeholder.parentElement,
-    activeDOM = frag.currDOM;
-
-  if (activeDOM === null) return;
-  else if (activeDOM.constructor === String)
-    return (placeholder.textContent = activeDOM);
-  else if (IS_ARRAY(activeDOM)) {
-    const iterator = new Iterator(activeDOM);
-    while (iterator.next())
-      appendToFrag(parentElement, iterator.value().DOM, placeholder);
-  } else appendToFrag(parentElement, activeDOM, placeholder);
-}
-
-function appendToFrag(parentElement, DOMNode, placeholder) {
-  if (DOMNode.constructor === DOM_FRAG) {
-    parentElement.insertBefore(DOMNode.placeholder, placeholder);
-    spreadFrag(DOMNode);
-  } else parentElement.insertBefore(DOMNode, placeholder);
-}
-
-function clearFrag(frag) {
-  const placeholder = frag.placeholder,
-    parentElement = placeholder.parentElement,
-    activeDOM = frag.currDOM;
-
-  if (activeDOM === null) return;
-  else if (activeDOM.constructor === String)
-    placeholder.textContent = EMPTY_STR;
-  else if (IS_ARRAY(activeDOM)) {
-    const iterator = new Iterator(activeDOM);
-    while (iterator.next()) removeFromFrag(parentElement, iterator.value().DOM);
-  } else removeFromFrag(parentElement, activeDOM);
-}
-
-function removeFromFrag(parentElement, DOMNode) {
-  if (DOMNode.constructor === DOM_FRAG) clearFrag(DOM_FRAG);
-  else parentElement.removeChild(DOMNode);
-}
-
-function Iterator(arr) {
-  this.index = -1;
-  this.ref = arr;
-  // this.result = [];
-}
-
-Iterator.prototype.next = function () {
-  if (this.ref.length - this.index === 1) return false;
-  this.index++;
-  return true;
-};
-
-Iterator.prototype.value = function () {
-  return this.ref[this.index];
-};
-
-// Iterator.prototype.call = function (fn) {
-//   this.result[this.index] = fn(this.value());
-// };
-
 function requestUpdate(ctx) {
   if (ctx.scripts !== undefined) {
     ctx.scripts = ctx.initScripts.apply(null);
@@ -182,8 +70,6 @@ function requestUpdate(ctx) {
   }
   return ctx;
 }
-
-function handleCustomTag(tag, ctx) {}
 
 function render(ctx, shadowHTMLElement) {
   const tag = shadowHTMLElement[0],
@@ -211,15 +97,24 @@ function render(ctx, shadowHTMLElement) {
     }
 
     if (children) {
-      const Children = new DOM_FRAG();
+      const Children = new DocumentFragment();
       let didRendered = false;
+
       Object.defineProperty(attrs, "Children", {
         get() {
           if (!didRendered) {
             const nodes = new Iterator(children);
-            while (nodes.next()) frag.append(render(ctx, nodes.value()));
+            while (nodes.next()) {
+              const childNode = render(ctx, nodes.value());
+
+              if (childNode.constructor === DOM_FRAG) {
+                Children.appendChild(childNode.placeholder);
+                expandFrag(childNode);
+              } else Children.appendChild(childNode);
+            }
             didRendered = true;
           }
+
           return Children;
         },
       });
@@ -245,22 +140,22 @@ function render(ctx, shadowHTMLElement) {
 
         case Number:
           const frag = new DOM_FRAG();
-          frag.append(ctx.scripts[node]);
           el.appendChild(frag.placeholder);
-          spreadFrag(frag);
+          frag.resolveContent(ctx.scripts[node]);
+          expandFrag(frag);
           ctx.observers.push(function () {
             clearFrag(frag);
-            frag.append(ctx.scripts[node]);
-            spreadFrag(frag);
+            frag.resolveContent(ctx.scripts[node]);
+            expandFrag(frag);
           });
           break;
 
         default:
-          const result = render(ctx, node);
-          if (result.constructor === DOM_FRAG) {
-            el.appendChild(result.placeholder);
-            spreadFrag(result);
-          } else el.appendChild(result);
+          const childNode = render(ctx, node);
+          if (childNode.constructor === DOM_FRAG) {
+            el.appendChild(childNode.placeholder);
+            expandFrag(childNode);
+          } else el.appendChild(childNode);
       }
     }
   }
@@ -288,4 +183,107 @@ function render(ctx, shadowHTMLElement) {
   }
 
   return el;
+}
+
+function handleCustomTag(tag, ctx) {}
+
+// ===================
+function Iterator(arr) {
+  this.index = -1;
+  this.ref = arr;
+}
+
+Iterator.prototype.next = function () {
+  if (this.ref.length - this.index === 1) return false;
+  this.index++;
+  return true;
+};
+
+Iterator.prototype.value = function () {
+  return this.ref[this.index];
+};
+// ===================
+const INST = "instance",
+  REF = "ref";
+
+function DOM_FRAG() {
+  this.placeholder = new Text();
+  this.cache = { instance: new Map(), ref: new Map() };
+  // Array (HTMLElements || DOM_Frag)
+  this.currDOM = [];
+}
+
+const FRAG_PROTO = DOM_FRAG.prototype;
+
+FRAG_PROTO.append = function (HTMLNode) {
+  this.currDOM.push(HTMLNode);
+};
+
+FRAG_PROTO.resolveContent = function (content) {
+  const SELF = this;
+  clearFrag(SELF);
+
+  switch (content.constructor) {
+    // jsxRoots Array
+    case IS_ARRAY(content):
+      const iterator = new Iterator(content);
+      while (iterator.next()) resolveComponent(SELF, iterator.value());
+      break;
+
+    // jsxRoot
+    case Object:
+      resolveComponent(SELF, content);
+      break;
+
+    default:
+      Number.isInteger(content) || (content ||= EMPTY_STR);
+      SELF.placeholder.textContent = EMPTY_STR + content;
+  }
+};
+
+function resolveComponent(frag, component) {
+  let cacheContainer = CACHED,
+    key = component.key;
+
+  if (key === null) {
+    const cacheType = Number.isInteger(component.dom[0]) ? INST : REF;
+    cacheContainer = frag.cache[cacheType];
+    key = component.index;
+  }
+
+  const result = cacheContainer.has(key)
+    ? requestUpdate(cacheContainer.get(key))
+    : cacheContainer.set(key, new Component(component)).get(key);
+
+  frag.append(result.DOM);
+}
+
+function expandFrag(frag) {
+  const placeholder = frag.placeholder,
+    parentElement = placeholder.parentElement,
+    activeDOM = frag.currDOM;
+
+  const iterator = new Iterator(activeDOM);
+  while (iterator.next()) {
+    const childNode = iterator.value();
+
+    if (childNode.constructor === DOM_FRAG) {
+      parentElement.insertBefore(childNode.placeholder, placeholder);
+      expandFrag(childNode);
+    } else parentElement.insertBefore(childNode, placeholder);
+  }
+}
+
+function clearFrag(frag) {
+  const parentElement = frag.placeholder.parentElement,
+    childNodes = new Iterator(frag.currDOM);
+
+  frag.placeholder.textContent = EMPTY_STR;
+  while (childNodes.next()) {
+    const childNode = childNodes.value();
+    if (childNode.constructor === DOM_FRAG) clearFrag(childNode);
+    else parentElement.removeChild(childNode);
+  }
+
+  childNodes.length = 0;
 }
