@@ -9,6 +9,22 @@ const CACHED = new Map();
 
 let currentCTX = null;
 
+const paramErr = {};
+paramErr.name = "useForce Hook Rules";
+paramErr.message = "";
+APP.forceUpdate = function (fn) {
+  // validate param & check for active Context
+  if (fn === undefined || fn.constructor === "Function" || currentCTX === null)
+    throw Object.assign(ERR, paramErr);
+
+  const ctx = currentCTX;
+
+  return () => {
+    fn();
+    requestUpdate(ctx);
+  };
+};
+
 export default APP;
 
 CUSTOM_ATTRS["ref"] = function (el, ctx, attrValue) {
@@ -137,6 +153,17 @@ PROTO.checkCase = function (childNode) {
   };
 };
 
+// ===================
+function requestUpdate(ctx) {
+  if (ctx.scripts !== undefined) {
+    ctx.scripts = ctx.initScripts.apply(null);
+    ctx.observers.forEach((S) => S());
+    ctx.pendingUpdates.forEach(requestUpdate);
+    ctx.pendingUpdates.clear();
+  }
+  return ctx;
+}
+
 function render(ctx, shadowHTMLElement) {
   const tag = shadowHTMLElement[0],
     attrs = shadowHTMLElement[1],
@@ -217,32 +244,6 @@ function render(ctx, shadowHTMLElement) {
     default:
       return ctx.createNode(shadowHTMLElement);
   }
-}
-
-const paramErr = {};
-paramErr.name = "useForce Hook Rules";
-paramErr.message = "";
-APP.forceUpdate = function (fn) {
-  // validate param & check for active Context
-  if (fn === undefined || fn.constructor === "Function" || currentCTX === null)
-    throw Object.assign(ERR, paramErr);
-
-  const ctx = currentCTX;
-
-  return () => {
-    fn();
-    requestUpdate(ctx);
-  };
-};
-
-function requestUpdate(ctx) {
-  if (ctx.scripts !== undefined) {
-    ctx.scripts = ctx.initScripts.apply(null);
-    ctx.observers.forEach((S) => S());
-    ctx.pendingUpdates.forEach(requestUpdate);
-    ctx.pendingUpdates.clear();
-  }
-  return ctx;
 }
 
 // ===================
