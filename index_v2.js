@@ -351,7 +351,7 @@ function clearFrag(frag, reset) {
   const parent = frag.placeholder.parentElement;
   frag.currDOM.forEach(function (childNode) {
     // Recursively clear child fragments
-    if (childNode instanceof DOM_FRAG) clearFrag(childNode, reset);
+    if (childNode instanceof DOM_FRAG) clearFrag(childNode);
     // Remove child DOM node
     else parent.removeChild(childNode);
   });
