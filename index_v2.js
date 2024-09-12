@@ -7,21 +7,24 @@ const EVENT_EXP = /^on[A-Z]/; // Regular expression to detect event attributes
 const CUSTOM_ATTRS = {}; // Object to store custom attribute handlers
 const CACHED = new Map(); // Cache for storing rendered components
 
-let currentCTX = null; // Global reference to the current component's context
-
 // Error handling object for forceUpdate function
 const paramErr = { name: "useForce Hook Rules", message: "" };
+
+// Global reference to the current component's context
+let currentCTX = null;
 
 // Force update for triggering re-renders
 APP.forceUpdate = function (fn) {
   if (typeof fn !== "function") throw Object.assign(ERR, paramErr); // Ensure fn is a function
 
-  const ctx = currentCTX; // Capture current component's context
+  // Capture current component's context
+  const ctx = currentCTX;
 
   // Return a function that will force re-rendering the component
-  return () => {
+  return function () {
     fn();
-    requestUpdate(ctx); // Trigger the component's update cycle
+    // Trigger the component's update cycle
+    requestUpdate(ctx);
   };
 };
 
@@ -29,13 +32,15 @@ export default APP;
 
 // Custom attribute handling logic for "ref" and "style"
 CUSTOM_ATTRS["ref"] = function (el, ctx, attrValue) {
-  ctx.scripts[attrValue]?.call(el, el); // Execute the script associated with the ref attribute
+  // Execute the script associated with the ref attribute
+  ctx.scripts[attrValue] && ctx.scripts[attrValue].call(el, el);
 };
 
 CUSTOM_ATTRS["style"] = function (el, ctx, attrValue) {
   const styleObject = ctx.scripts[attrValue]; // Get style object from scripts
   if (styleObject) {
-    Object.assign(el.style, styleObject); // Apply styles
+    // Apply styles
+    Object.assign(el.style, styleObject);
     // Add to observers to reapply styles when they change
     ctx.observers.push(() => Object.assign(el.style, styleObject));
   }
@@ -47,18 +52,18 @@ const switchEXP = "Switch",
   linkEXP = "Link",
   anchorEXP = "a";
 
-// Helper function to exclude the PRIVATE_KEY when processing attributes
-const excludePrivateKey = (key) => key !== PRIVATE_KEY;
 // Helper function to filter case expressions for switch-case logic
 const caseFiltration = (CN) => IS_ARRAY(CN) && CN[0] === caseEXP;
 
 // Main Component constructor for building components
 function Component(jsxRoot, props = {}) {
-  if (!(this instanceof Component)) return new Component(jsxRoot, props); // Ensure proper instantiation
-
-  currentCTX = this; // Set current component's context
-  jsxRoot = typeof jsxRoot === "function" ? jsxRoot(props) : jsxRoot; // Execute if the jsxRoot is a function
-  currentCTX = null; // Reset the context
+  // Ensure proper instantiation
+  if (!(this instanceof Component)) return new Component(jsxRoot, props);
+  else if (typeof jsxRoot === "function") {
+    currentCTX = this; // Set current component's context
+    jsxRoot = jsxRoot(props); // Execute if the jsxRoot is a function
+    currentCTX = null; // Reset the context
+  }
 
   if (jsxRoot.scripts) {
     this.initScripts = jsxRoot.scripts; // Store initial scripts
@@ -76,92 +81,107 @@ const PROTO = Component.prototype; // Component's prototype for adding methods
 // Method to create a DOM node based on the type of node passed (String, Number, or JSX)
 PROTO.createNode = function (node) {
   switch (node.constructor) {
+    // Create text node for strings
     case String:
-      return document.createTextNode(node); // Create text node for strings
+      return document.createTextNode(node);
 
+    // Handle numbers as text content with observers
     case Number:
-      return this.createTextNode(node); // Handle numbers as text content with observers
+      return this.createTextNode(node);
 
+    // Handle JSX-like elements
     default:
-      return this.createElementNode(node); // Handle JSX-like elements
+      return this.createElementNode(node);
   }
 };
 
 // Method to handle creation of text nodes (used for numbers)
 PROTO.createTextNode = function (node) {
-  const frag = new DOM_FRAG(); // Create a new DOM fragment
-  frag.resolveContent(this.scripts[node]); // Resolve the content from scripts
+  const SELF = this,
+    frag = new DOM_FRAG(); // Create a new DOM fragment
+  // Resolve the content from scripts
+  frag.resolveDynamicContent(this.scripts[node]);
+
   // Add observer to update fragment when content changes
-  this.observers.push(() => {
-    clearFrag(frag); // Clear previous fragment
-    frag.resolveContent(this.scripts[node]); // Re-resolve the content
-    expandFrag(frag); // Expand fragment in the DOM
+  this.observers.push(function () {
+    // Clear previous fragment
+    clearFrag(frag);
+    // Re-resolve the content
+    frag.resolveDynamicContent(SELF.scripts[node]);
+    // Expand fragment in the DOM
+    expandFrag(frag);
   });
+
   return frag;
 };
 
 // Method to handle creation of DOM elements (e.g., <div>, <span>)
 PROTO.createElementNode = function ([tag, attrs = {}, children = []]) {
-  const el = document.createElement(tag); // Create the actual DOM element
+  const SELF = this,
+    el = document.createElement(tag); // Create the actual DOM element
 
   // Recursively render and append child nodes
   if (children.length) {
-    const childrenNodes = children.map((child) => render(this, child));
-    childrenNodes.forEach((childNode) =>
-      el.appendChild(
-        childNode instanceof DOM_FRAG ? childNode.placeholder : childNode
-      )
-    );
-    childrenNodes.forEach(expandFrag); // Expand fragments if present
+    const childrenNodes = children;
+    childrenNodes.forEach(function (child) {
+      const childNode = render(SELF, child);
+      if (childNode instanceof DOM_FRAG) {
+        el.appendChild(childNode.placeholder);
+        expandFrag(childNode);
+      } else el.appendChild(childNode);
+    });
+
+    // Apply attributes to the element
+    this.applyAttributes(el, attrs);
+    return el;
   }
-
-  this.applyAttributes(el, attrs); // Apply attributes to the element
-
-  return el;
 };
 
 // Method to apply attributes (including custom attributes and event listeners) to an element
 PROTO.applyAttributes = function (el, attrs) {
-  const { scripts } = this;
+  const SELF = this;
   if (attrs[PRIVATE_KEY]) {
-    attrs[PRIVATE_KEY].forEach((obj) => Object.assign(attrs, obj)); // Apply private attributes if present
+    // Apply private attributes if present
+    attrs[PRIVATE_KEY].forEach((obj) => Object.assign(attrs, obj));
   }
 
   // Loop over all attributes and apply them
-  Object.keys(attrs)
-    .filter(excludePrivateKey) // Exclude private keys
-    .forEach((attrName) => {
-      const attrValue = attrs[attrName];
-      if (EVENT_EXP.test(attrName)) {
-        // Handle event attributes (e.g., onClick)
-        el.addEventListener(attrName.slice(2).toLowerCase(), (e) => {
-          const result = scripts[attrValue]?.apply(el, [e]);
-          if (result === true) requestUpdate(this); // Trigger update if the event handler returns true
-        });
-      } else if (CUSTOM_ATTRS[attrName]) {
-        // Handle custom attributes like ref and style
-        CUSTOM_ATTRS[attrName](el, this, attrValue);
-      } else {
-        el[attrName] = attrValue; // Apply regular attributes
-      }
-    });
+  Object.keys(attrs).forEach(function (attrName) {
+    if (attrName === PRIVATE_KEY) return;
+    const attrValue = attrs[attrName];
+    if (EVENT_EXP.test(attrName)) {
+      // Handle event attributes (e.g., onClick)
+      el.addEventListener(attrName.slice(2).toLowerCase(), function (e) {
+        const result =
+          SELF.scripts[attrValue] && SELF.scripts[attrValue].apply(el, [e]);
+        if (result === true) requestUpdate(SELF); // Trigger update if the event handler returns true
+      });
+    } else if (CUSTOM_ATTRS[attrName]) {
+      // Handle custom attributes like ref and style
+      CUSTOM_ATTRS[attrName](el, SELF, attrValue);
+    } else {
+      el[attrName] = attrValue; // Apply regular attributes
+    }
+  });
 };
 
 // Method for conditional rendering in switch-case components
 PROTO.checkCase = function (childNode) {
-  const conditionRef = childNode[1]?.test || true; // Check condition reference for switch-case
-  let container = [];
+  const SELF = this,
+    conditionRef = childNode[1].test || true; // Check condition reference for switch-case
+
+  let container = null;
 
   // Return a function that will be called to render the case conditionally
-  return () => {
+  return function () {
     const testRes =
       Boolean(conditionRef) ||
-      (Number.isInteger(conditionRef) && this.scripts[conditionRef]);
+      (Number.isInteger(conditionRef) && SELF.scripts[conditionRef]);
 
     // Render children if condition passes and container hasn't been rendered before
-    if (!container.length) {
+    if (container === null) {
       const childNodes = childNode[2] || [];
-      container = childNodes.map((node) => render(this, node));
+      container = childNodes.map((node) => render(SELF, node));
     }
 
     return testRes ? container : null; // Return the rendered children if test passes
@@ -176,39 +196,80 @@ function requestUpdate(ctx) {
     ctx.pendingUpdates.forEach(requestUpdate); // Process pending updates
     ctx.pendingUpdates.clear(); // Clear pending updates
   }
+  return ctx;
 }
 
 // Main rendering function for creating components and elements
 function render(ctx, vNode) {
-  const [tag, attrs, children] = vNode || [];
+  const [tag, attrs, children] = vNode;
 
   // Handle dynamic components (identified by integers)
   if (Number.isInteger(tag)) {
-    return new Component(ctx.components[tag], attrs).DOM;
-  }
+    let C;
 
+    if (attrs) {
+      attrs.forEach(handleProp);
+      function handleProp(key) {
+        const value = attrs[key];
+        if (Number.isInteger(value)) {
+          attrs[key] = ctx.scripts[value];
+          ctx.observers.push(function () {
+            const newVal = ctx.scripts[value];
+            if (attrs[key] === newVal) return;
+            attrs[key] = newVal;
+            ctx.pendingUpdates.add(C);
+          });
+        }
+      }
+    }
+
+    if (children) {
+      const docFrag = new DOM_FRAG();
+      let didRendered = false;
+
+      Object.defineProperty(attrs, "Children", {
+        get() {
+          if (!didRendered) {
+            children.forEach(appendChildNode);
+            didRendered = true;
+          }
+          return docFrag;
+        },
+      });
+
+      function appendChildNode(node) {
+        const childNode = render(ctx, node);
+        docFrag.append(childNode);
+      }
+    }
+
+    C = new Component(ctx.components[tag], attrs);
+    return C.DOM;
+  }
   // Handle switch-case components
-  if (tag === switchEXP) {
-    return renderSwitchCase(ctx, children);
-  }
-
+  else if (tag === switchEXP) return renderSwitchCase(ctx, children);
   // Handle link elements (convert custom "Link" to <a> tag)
-  if (tag === linkEXP) {
+  else if (tag === linkEXP) {
     vNode[0] = anchorEXP;
   }
 
-  return ctx.createNode(vNode); // Create DOM node based on the vNode
+  // Create DOM node based on the vNode
+  return ctx.createNode(vNode);
 }
 
 // Function to handle switch-case components
 function renderSwitchCase(ctx, children) {
-  const frag = new DOM_FRAG(); // Create a fragment to hold the case results
-  const cases = children.filter(caseFiltration).map(ctx.checkCase, ctx); // Filter and map cases
+  // Create a fragment to hold the case results
+  const frag = new DOM_FRAG();
+  // Filter and map cases
+  const cases = children.filter(caseFiltration).map(ctx.checkCase, ctx);
 
   let index = 0;
   // Add observer to update fragment when the case condition changes
-  ctx.observers.push(() => {
-    clearFrag(frag); // Clear previous content
+  ctx.observers.push(function () {
+    // Clear previous content
+    clearFrag(frag, true);
+
     while (cases.length > index) {
       const result = cases[index++](); // Check case condition
       if (result) {
@@ -216,7 +277,8 @@ function renderSwitchCase(ctx, children) {
         break;
       }
     }
-    expandFrag(frag); // Expand the fragment into the DOM
+    // Expand the fragment into the DOM
+    expandFrag(frag);
     index = 0;
   });
 
@@ -232,29 +294,32 @@ function DOM_FRAG() {
 
 // Method to append nodes to the fragment
 DOM_FRAG.prototype.append = function (HTMLNode) {
-  if (IS_ARRAY(HTMLNode)) {
-    HTMLNode.forEach((node) => this.append(node)); // Handle arrays of nodes
-  } else {
-    this.currDOM.push(HTMLNode); // Add single node to currDOM
-  }
+  const SELF = this;
+  // Handle arrays of nodes
+  if (IS_ARRAY(HTMLNode)) HTMLNode.forEach((node) => SELF.append(node));
+  // Add single node to currDOM
+  else SELF.currDOM.push(HTMLNode);
 };
 
 // Method to resolve and update the content inside the fragment
-DOM_FRAG.prototype.resolveContent = function (content) {
-  clearFrag(this); // Clear previous content
+DOM_FRAG.prototype.resolveDynamicContent = function (content) {
+  const SELF = this;
 
-  if (IS_ARRAY(content)) {
-    content.forEach((comp) => resolveComponent(this, comp)); // Resolve each component in array
-  } else if (typeof content === "object") {
-    resolveComponent(this, content); // Resolve single component object
-  } else {
-    this.placeholder.textContent = EMPTY_STR + content; // Update placeholder with simple text
-  }
+  // Clear previous content
+  clearFrag(SELF, true);
+
+  // Resolve each component in array
+  if (IS_ARRAY(content))
+    content.forEach((comp) => resolveComponent(SELF, comp));
+  // Resolve single component object
+  else if (typeof content === "object") resolveComponent(SELF, content);
+  // Update placeholder with simple text
+  else SELF.placeholder.textContent = EMPTY_STR + content;
 };
 
 // Resolve a component and append its DOM to the fragment
 function resolveComponent(frag, component) {
-  const key = component.key ?? component.index; // Determine cache key
+  const key = component.key || component.index; // Determine cache key
   const cacheContainer = component.key
     ? CACHED
     : frag.cache[component.dom[0] ? "instance" : "ref"];
@@ -271,25 +336,26 @@ function resolveComponent(frag, component) {
 function expandFrag(frag) {
   const parent = frag.placeholder.parentElement;
 
-  frag.currDOM.forEach((childNode) => {
+  frag.currDOM.forEach(function (childNode) {
     if (childNode instanceof DOM_FRAG) {
       parent.insertBefore(childNode.placeholder, frag.placeholder); // Insert child fragment's placeholder
       expandFrag(childNode); // Recursively expand child fragments
-    } else {
-      parent.insertBefore(childNode, frag.placeholder); // Insert child DOM node
     }
+    // Insert child DOM node
+    else parent.insertBefore(childNode, frag.placeholder);
   });
 }
 
 // Clear the contents of a fragment from the DOM
-function clearFrag(frag) {
+function clearFrag(frag, reset) {
   const parent = frag.placeholder.parentElement;
-  frag.currDOM.forEach((childNode) => {
-    if (childNode instanceof DOM_FRAG) {
-      clearFrag(childNode); // Recursively clear child fragments
-    } else {
-      parent.removeChild(childNode); // Remove child DOM node
-    }
+  frag.currDOM.forEach(function (childNode) {
+    // Recursively clear child fragments
+    if (childNode instanceof DOM_FRAG) clearFrag(childNode, reset);
+    // Remove child DOM node
+    else parent.removeChild(childNode);
   });
-  frag.currDOM.length = 0; // Reset currDOM
+
+  // Reset currDOM
+  reset && (frag.currDOM.length = 0);
 }
