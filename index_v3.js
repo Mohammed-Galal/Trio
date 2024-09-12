@@ -1,41 +1,100 @@
+/**
+ * Error instance for general use.
+ * @type {Error}
+ */
 const ERR = new Error();
-const APP = {}; // Main app object that holds utility functions
-const IS_ARRAY = Array.isArray;
-const EMPTY_STR = "";
-const PRIVATE_KEY = "#Xtends"; // Used to mark custom private attributes
-const EVENT_EXP = /^on[A-Z]/; // Regular expression to detect event attributes
-const CUSTOM_ATTRS = {}; // Object to store custom attribute handlers
-const CACHED = new Map(); // Cache for storing rendered components
 
-// Error handling object for forceUpdate function
+/**
+ * Main app object that holds utility functions.
+ * @type {Object}
+ */
+const APP = {};
+
+/**
+ * Alias for checking if a value is an array.
+ * @type {Function}
+ */
+const IS_ARRAY = Array.isArray;
+
+/**
+ * Empty string constant.
+ * @type {string}
+ */
+const EMPTY_STR = "";
+
+/**
+ * Key used to mark custom private attributes.
+ * @type {string}
+ */
+const PRIVATE_KEY = "#Xtends";
+
+/**
+ * Regular expression to detect event attributes (e.g., onClick).
+ * @type {RegExp}
+ */
+const EVENT_EXP = /^on[A-Z]/;
+
+/**
+ * Object to store custom attribute handlers.
+ * @type {Object}
+ */
+const CUSTOM_ATTRS = {};
+
+/**
+ * Cache for storing rendered components.
+ * @type {Map}
+ */
+const CACHED = new Map();
+
+/**
+ * Error object used in the forceUpdate function for invalid parameters.
+ * @type {Object}
+ */
 const paramErr = { name: "useForce Hook Rules", message: "" };
 
-// Global reference to the current component's context
+/**
+ * Global reference to the current component's context.
+ * @type {Object|null}
+ */
 let currentCTX = null;
 
-// Force update for triggering re-renders
+/**
+ * @method forceUpdate
+ * @description Force update function to trigger component re-rendering.
+ * @param {Function} fn - Function to be called for update.
+ * @throws {Error} Throws error if fn is not a function.
+ * @returns {Function} Returns a function that will force the component to re-render.
+ */
 APP.forceUpdate = function (fn) {
-  if (typeof fn !== "function") throw Object.assign(ERR, paramErr); // Ensure fn is a function
+  if (typeof fn !== "function") throw Object.assign(ERR, paramErr);
 
-  // Capture current component's context
   const ctx = currentCTX;
 
-  // Return a function that will force re-rendering the component
   return function () {
     fn();
-    // Trigger the component's update cycle
     requestUpdate(ctx);
   };
 };
 
-// export default APP;
-
-// Custom attribute handling logic for "ref" and "style"
+/**
+ * @method ref
+ * @description Custom attribute handler for the "ref" attribute.
+ * @param {HTMLElement} el - The target element.
+ * @param {Object} ctx - The component context.
+ * @param {string} attrValue - The value of the "ref" attribute.
+ */
 CUSTOM_ATTRS["ref"] = function (el, ctx, attrValue) {
   // Execute the script associated with the ref attribute
   ctx.scripts[attrValue] && ctx.scripts[attrValue].call(el, el);
 };
 
+/**
+ * @method style
+ * @description Custom attribute handler for the "style" attribute.
+ * @param {HTMLElement} el - The target element.
+ * @param {Object} ctx - The component context.
+ * @param {string} attrValue - The value of the "style" attribute.
+ */
 CUSTOM_ATTRS["style"] = function (el, ctx, attrValue) {
   const styleObject = ctx.scripts[attrValue]; // Get style object from scripts
   if (styleObject) {
@@ -52,10 +111,21 @@ const switchEXP = "Switch",
   linkEXP = "Link",
   anchorEXP = "a";
 
-// Helper function to filter case expressions for switch-case logic
+/**
+ * @function caseFiltration
+ * @description Helper function to filter case expressions in switch-case logic.
+ * @param {Array} CN - The case node array.
+ * @returns {boolean} Returns true if the node represents a case expression.
+ */
 const caseFiltration = (CN) => IS_ARRAY(CN) && CN[0] === caseEXP;
 
-// Main Component constructor for building components
+/**
+ * @function Component
+ * @description Component constructor for building components.
+ * @param {Object} jsxRoot - The root JSX structure.
+ * @param {Object} [props={}] - Optional properties for the component.
+ * @constructor
+ */
 function Component(jsxRoot, props = {}) {
   // Ensure proper instantiation
   if (!(this instanceof Component)) return new Component(jsxRoot, props);
@@ -78,7 +148,13 @@ function Component(jsxRoot, props = {}) {
 
 const PROTO = Component.prototype; // Component's prototype for adding methods
 
-// Method to create a DOM node based on the type of node passed (String, Number, or JSX)
+/**
+ * @this Component.prototype
+ * @method createNode
+ * @description Creates a DOM node based on the type of the node passed.
+ * @param {*} node - The node to be created.
+ * @returns {HTMLElement|Text|DocumentFragment} DOM node based on the type of node passed (String, Number, or JSX).
+ */
 PROTO.createNode = function (node) {
   switch (node.constructor) {
     // Create text node for strings
@@ -95,7 +171,13 @@ PROTO.createNode = function (node) {
   }
 };
 
-// Method to handle creation of text nodes (used for numbers)
+/**
+ * @this Component.prototype
+ * @method createTextNode
+ * @description Creates a text node for numbers and sets up observers for dynamic updates.
+ * @param {number} node - The number to be converted to text.
+ * @returns {DocumentFragment} The document fragment representing the number.
+ */
 PROTO.createTextNode = function (node) {
   const SELF = this,
     frag = new DOM_FRAG(); // Create a new DOM fragment
@@ -115,7 +197,13 @@ PROTO.createTextNode = function (node) {
   return frag;
 };
 
-// Method to handle creation of DOM elements (e.g., <div>, <span>)
+/**
+ * @this Component.prototype
+ * @method createElementNode
+ * @description Creates a DOM element (e.g., <div>, <span>) and appends child nodes.
+ * @param {Array} node - The node array [tag, attributes, children].
+ * @returns {HTMLElement} The created DOM element.
+ */
 PROTO.createElementNode = function ([tag, attrs = {}, children = []]) {
   const SELF = this,
     el = document.createElement(tag); // Create the actual DOM element
@@ -137,7 +225,13 @@ PROTO.createElementNode = function ([tag, attrs = {}, children = []]) {
   }
 };
 
-// Method to apply attributes (including custom attributes and event listeners) to an element
+/**
+ * @this Component.prototype
+ * @method applyAttributes
+ * @description Applies attributes (including custom attributes and event listeners) to an element.
+ * @param {HTMLElement} el - The target element.
+ * @param {Object} attrs - The attributes to apply.
+ */
 PROTO.applyAttributes = function (el, attrs) {
   const SELF = this;
   if (attrs[PRIVATE_KEY]) {
@@ -165,7 +259,13 @@ PROTO.applyAttributes = function (el, attrs) {
   });
 };
 
-// Method for conditional rendering in switch-case components
+/**
+ * @this Component.prototype
+ * @method checkCase
+ * @description Handles conditional rendering in switch-case components.
+ * @param {Array} childNode - The case node array.
+ * @returns {Function} Function that returns the rendered children if the test passes.
+ */
 PROTO.checkCase = function (childNode) {
   const SELF = this,
     conditionRef = childNode[1].test || true; // Check condition reference for switch-case
@@ -188,7 +288,12 @@ PROTO.checkCase = function (childNode) {
   };
 };
 
-// Update function to trigger re-rendering and call observers
+/**
+ * @function requestUpdate
+ * @description Requests an update for the given component context.
+ * @param {Object} ctx - The component context.
+ * @returns {Object} The updated context.
+ */
 function requestUpdate(ctx) {
   if (ctx.scripts) {
     ctx.scripts = ctx.initScripts(); // Reinitialize scripts
@@ -199,7 +304,13 @@ function requestUpdate(ctx) {
   return ctx;
 }
 
-// Main rendering function for creating components and elements
+/**
+ * @function render
+ * @description Main rendering function for creating components and elements.
+ * @param {Object} ctx - The component context.
+ * @param {Array} vNode - The virtual node array [tag, attributes, children].
+ * @returns {HTMLElement|DocumentFragment} The rendered DOM.
+ */
 function render(ctx, vNode) {
   const [tag, attrs, children] = vNode;
 
@@ -257,6 +368,13 @@ function render(ctx, vNode) {
   return ctx.createNode(vNode);
 }
 
+/**
+ * @function renderSwitchCase
+ * @description Renders switch-case components.
+ * @param {Object} ctx - The component context.
+ * @param {Array} children - The array of case nodes.
+ * @returns {DocumentFragment} The rendered document fragment.
+ */
 function renderSwitchCase(ctx, children) {
   // Create a fragment to hold the case results
   const frag = new DOM_FRAG();
@@ -285,14 +403,23 @@ function renderSwitchCase(ctx, children) {
   return frag;
 }
 
-// DOM Fragment constructor to manage dynamic content
+/**
+ * @function DOM_FRAG
+ * @description Constructor for managing dynamic content in document fragments.
+ * @constructor
+ */
 function DOM_FRAG() {
   this.placeholder = document.createTextNode(EMPTY_STR); // Placeholder text node for fragment
   this.cache = { instance: new Map(), ref: new Map() }; // Cache for instances and refs
   this.currDOM = []; // Current DOM elements inside the fragment
 }
 
-// Method to append nodes to the fragment
+/**
+ * @this DOM_FRAG.prototype
+ * @method append
+ * @description Appends nodes to the fragment.
+ * @param {HTMLElement|Array} HTMLNode - The node or array of nodes to append.
+ */
 DOM_FRAG.prototype.append = function (HTMLNode) {
   const SELF = this;
   // Handle arrays of nodes
@@ -301,7 +428,12 @@ DOM_FRAG.prototype.append = function (HTMLNode) {
   else SELF.currDOM.push(HTMLNode);
 };
 
-// Method to resolve and update the content inside the fragment
+/**
+ * @this DOM_FRAG.prototype
+ * @method resolveDynamicContent
+ * @description Resolves and updates dynamic content inside the fragment.
+ * @param {*} content - The content to resolve (array, object, or text).
+ */
 DOM_FRAG.prototype.resolveDynamicContent = function (content) {
   const SELF = this;
 
@@ -317,7 +449,12 @@ DOM_FRAG.prototype.resolveDynamicContent = function (content) {
   else SELF.placeholder.textContent = EMPTY_STR + content;
 };
 
-// Resolve a component and append its DOM to the fragment
+/**
+ * @function resolveComponent
+ * @description Resolves a component and appends its DOM to the fragment.
+ * @param {DOM_FRAG} frag - The fragment to append the component to.
+ * @param {Component} component - The component object.
+ */
 function resolveComponent(frag, component) {
   const key = component.key || component.index; // Determine cache key
   const cacheContainer = component.key
@@ -332,7 +469,11 @@ function resolveComponent(frag, component) {
   frag.append(result.DOM);
 }
 
-// Expand fragment by inserting its nodes into the DOM
+/**
+ * @function expandFrag
+ * @description Expands the fragment by inserting its nodes into the DOM.
+ * @param {DOM_FRAG} frag - The fragment to expand.
+ */
 function expandFrag(frag) {
   const parent = frag.placeholder.parentElement;
 
@@ -346,7 +487,12 @@ function expandFrag(frag) {
   });
 }
 
-// Clear the contents of a fragment from the DOM
+/**
+ * @function clearFrag
+ * @description Clears the contents of a fragment from the DOM.
+ * @param {DOM_FRAG} frag - The fragment to clear.
+ * @param {boolean} [reset=false] - Whether to reset the currDOM array.
+ */
 function clearFrag(frag, reset) {
   const parent = frag.placeholder.parentElement;
   frag.currDOM.forEach(function (childNode) {
