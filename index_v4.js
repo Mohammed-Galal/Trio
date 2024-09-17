@@ -31,9 +31,7 @@ CUSTOM_ATTRS["style"] = function (el, ctx, attrValue) {
 
 window.forceUpdate = function (fn) {
   if (typeof fn !== "function") throw Object.assign(ERR, paramErr);
-
   const ctx = currentCTX;
-
   return function () {
     fn();
     requestUpdate(ctx);
@@ -66,7 +64,7 @@ function Component(jsxRoot, props = {}) {
   }
 
   this.components = jsxRoot.components;
-  this.DOM = this.renderElement(jsxRoot.dom);
+  this.DOM = this.createElementNode(jsxRoot.dom);
 }
 
 const PROTO = Component.prototype;
@@ -85,61 +83,69 @@ PROTO.createNode = function (node) {
         frag.resolveDynamicContent(SELF.scripts[node]);
         expandFrag(frag);
       });
-
       return frag;
 
     default:
-      return this.renderElement(node);
+      const isComponent = Number.isInteger(node[0][0]),
+        targetMethod =
+          this[isComponent ? "renderComponent" : "createElementNode"];
+
+      // assign spread attrs to node attrs
+      return targetMethod(node);
   }
 };
-PROTO.renderElement = function (vNode) {
+
+PROTO.renderComponent = function (vNode) {
+  const SELF = this,
+    [tag, attrs, children] = vNode;
+
+  let C;
+
+  if (attrs) {
+    // attrs.forEach(handleProp);
+    function handleProp(key) {
+      const value = attrs[key];
+      if (Number.isInteger(value)) {
+        attrs[key] = SELF.scripts[value];
+        SELF.observers.push(function () {
+          const newVal = SELF.scripts[value];
+          if (attrs[key] === newVal) return;
+          attrs[key] = newVal;
+          SELF.pendingUpdates.add(C);
+        });
+      }
+    }
+  }
+
+  if (children) {
+    const DOMFrag = new DOM_FRAG();
+    let didRendered = false;
+
+    Object.defineProperty(attrs, "Children", {
+      get() {
+        if (!didRendered) {
+          children.forEach(appendChildNode);
+          didRendered = true;
+        }
+        return DOMFrag;
+      },
+    });
+
+    function appendChildNode(node) {
+      const childNode = SELF.createNode(node);
+      DOMFrag.append(childNode);
+    }
+  }
+
+  C = new Component(SELF.components[tag], attrs);
+  return C.DOM;
+};
+
+PROTO.createElementNode = function (vNode) {
   const SELF = this,
     [tag, attrs = {}, children = []] = vNode;
 
-  debugger;
-
-  if (Number.isInteger(tag)) {
-    let C;
-
-    if (attrs) {
-      // attrs.forEach(handleProp);
-      function handleProp(key) {
-        const value = attrs[key];
-        if (Number.isInteger(value)) {
-          attrs[key] = ctx.scripts[value];
-          ctx.observers.push(function () {
-            const newVal = ctx.scripts[value];
-            if (attrs[key] === newVal) return;
-            attrs[key] = newVal;
-            ctx.pendingUpdates.add(C);
-          });
-        }
-      }
-    }
-
-    if (children) {
-      const DOMFrag = new DOM_FRAG();
-      let didRendered = false;
-
-      Object.defineProperty(attrs, "Children", {
-        get() {
-          if (!didRendered) {
-            children.forEach(appendChildNode);
-            didRendered = true;
-          }
-          return DOMFrag;
-        },
-      });
-
-      function appendChildNode(node) {
-        const childNode = SELF.createNode(node);
-        DOMFrag.append(childNode);
-      }
-    }
-
-    C = new Component(SELF.components[tag], attrs);
-    return C.DOM;
-  } else if (tag === switchEXP) return renderSwitchCase(ctx, children);
+  if (tag === switchEXP) return renderSwitchCase(SELF, children);
   else if (tag === linkEXP) {
     vNode[0] = anchorEXP;
   }
@@ -196,7 +202,7 @@ PROTO.checkCase = function (childNode) {
 
     if (container === null) {
       const childNodes = childNode[2] || [];
-      container = childNodes.map((node) => SELF.renderElement(node));
+      container = childNodes.map((node) => SELF.createElementNode(node));
     }
 
     return testRes ? container : null;
