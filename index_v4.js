@@ -65,8 +65,7 @@ function Component(jsxRoot, props = {}) {
     this.pendingUpdates = new Set();
   }
 
-  this.component = jsxRoot.components;
-  debugger;
+  this.components = jsxRoot.components;
   this.DOM = this.renderElement(jsxRoot.dom);
 }
 
@@ -93,15 +92,17 @@ PROTO.createNode = function (node) {
       return this.renderElement(node);
   }
 };
-
 PROTO.renderElement = function (vNode) {
-  const [tag, attrs = {}, children = []] = vNode;
+  const SELF = this,
+    [tag, attrs = {}, children = []] = vNode;
+
+  debugger;
 
   if (Number.isInteger(tag)) {
     let C;
 
     if (attrs) {
-      attrs.forEach(handleProp);
+      // attrs.forEach(handleProp);
       function handleProp(key) {
         const value = attrs[key];
         if (Number.isInteger(value)) {
@@ -136,15 +137,14 @@ PROTO.renderElement = function (vNode) {
       }
     }
 
-    C = new Component(ctx.components[tag], attrs);
+    C = new Component(SELF.components[tag], attrs);
     return C.DOM;
   } else if (tag === switchEXP) return renderSwitchCase(ctx, children);
   else if (tag === linkEXP) {
     vNode[0] = anchorEXP;
   }
 
-  const SELF = this,
-    el = document.createElement(tag);
+  const el = document.createElement(tag);
 
   if (children.length) {
     children.forEach(function (child) {
