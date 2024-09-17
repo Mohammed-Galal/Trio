@@ -86,12 +86,7 @@ PROTO.createNode = function (node) {
       return frag;
 
     default:
-      const isComponent = Number.isInteger(node[0][0]),
-        targetMethod =
-          this[isComponent ? "renderComponent" : "createElementNode"];
-
-      // assign spread attrs to node attrs
-      return targetMethod(node);
+      return this.createElementNode(node);
   }
 };
 
@@ -143,9 +138,10 @@ PROTO.renderComponent = function (vNode) {
 
 PROTO.createElementNode = function (vNode) {
   const SELF = this,
-    [tag, attrs = {}, children = []] = vNode;
+    [tag, attrs, children] = vNode;
 
-  if (tag === switchEXP) return renderSwitchCase(SELF, children);
+  if (Number.isInteger(vNode[0])) return this.renderComponent(vNode);
+  else if (tag === switchEXP) return renderSwitchCase(SELF, children);
   else if (tag === linkEXP) {
     vNode[0] = anchorEXP;
   }
@@ -196,9 +192,9 @@ PROTO.checkCase = function (childNode) {
   let container = null;
 
   return function () {
-    const testRes =
-      Boolean(conditionRef) ||
-      (Number.isInteger(conditionRef) && SELF.scripts[conditionRef]);
+    const testRes = Number.isInteger(conditionRef)
+      ? SELF.scripts[conditionRef]
+      : Boolean(conditionRef);
 
     if (container === null) {
       const childNodes = childNode[2] || [];
