@@ -198,7 +198,7 @@ PROTO.checkCase = function (childNode) {
 
     if (container === null) {
       const childNodes = childNode[2] || [];
-      container = childNodes.map((node) => SELF.createElementNode(node));
+      container = childNodes.map(SELF.createNode, SELF);
     }
 
     return testRes ? container : null;
@@ -210,20 +210,23 @@ function renderSwitchCase(ctx, children) {
   const cases = children.filter(caseFiltration).map(ctx.checkCase, ctx);
 
   let index = 0;
-  ctx.observers.push(function () {
-    clearFrag(frag, true);
+  ctx.observers.push(updateContent);
+
+  // set frag.currDOM
+  return frag;
+
+  function updateContent() {
+    clearFrag(frag);
     while (cases.length > index) {
       const result = cases[index++]();
       if (result) {
-        frag.append(result);
+        frag.currDOM = result;
         break;
       }
     }
     expandFrag(frag);
     index = 0;
-  });
-
-  return frag;
+  }
 }
 
 function DOM_FRAG() {
@@ -235,7 +238,7 @@ function DOM_FRAG() {
 DOM_FRAG.prototype.append = function (HTMLNode) {
   const SELF = this;
 
-  if (IS_ARRAY(HTMLNode)) HTMLNode.forEach((node) => SELF.append(node));
+  if (IS_ARRAY(HTMLNode)) HTMLNode.forEach(SELF.append, SELF);
   else SELF.currDOM.push(HTMLNode);
 };
 
