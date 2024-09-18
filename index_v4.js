@@ -70,12 +70,12 @@ function Component(jsxRoot, props = {}) {
 
 const PROTO = Component.prototype;
 
+// returns {textNode|nodeElement|DOM_FRAG}
 PROTO.createNode = function (node) {
   switch (node.constructor) {
     case String:
       return document.createTextNode(node);
 
-    // returns DOM_FRAG
     case Number:
       const SELF = this,
         frag = new DOM_FRAG();
@@ -90,6 +90,39 @@ PROTO.createNode = function (node) {
     default:
       return this.createElementNode(node);
   }
+};
+
+PROTO.createElementNode = function (vNode) {
+  const SELF = this,
+    [tag, attrs, children] = vNode;
+
+  Object.assign.apply(attrs, attrs[PRIVATE_KEY]);
+
+  if (Number.isInteger(vNode[0])) return this.renderComponent(vNode);
+  else if (tag === switchEXP) return renderSwitchCase(SELF, children);
+  else if (tag === linkEXP) {
+    vNode[0] = anchorEXP;
+  }
+
+  let el;
+
+  if (tag === "Frag") el = document.createDocumentFragment();
+  else {
+    el = document.createElement(tag);
+    applyAttributes(SELF, el, attrs);
+  }
+
+  if (children.length) {
+    children.forEach(function (child) {
+      const childNode = SELF.createNode(child);
+      if (childNode instanceof DOM_FRAG) {
+        el.appendChild(childNode.placeholder);
+        expandFrag(childNode);
+      } else el.appendChild(childNode);
+    });
+  }
+
+  return el;
 };
 
 // returns DocumentFragment : HTMLElement
@@ -139,58 +172,78 @@ PROTO.renderComponent = function (vNode) {
   return C.DOM;
 };
 
-PROTO.createElementNode = function (vNode) {
-  const SELF = this,
-    [tag, attrs, children] = vNode;
-
-  if (Number.isInteger(vNode[0])) return this.renderComponent(vNode);
-  else if (tag === switchEXP) return renderSwitchCase(SELF, children);
-  else if (tag === linkEXP) {
-    vNode[0] = anchorEXP;
-  }
-
-  const el =
-    tag === "Frag"
-      ? document.createDocumentFragment()
-      : document.createElement(tag);
-
-  if (children.length) {
-    children.forEach(function (child) {
-      const childNode = SELF.createNode(child);
-      if (childNode instanceof DOM_FRAG) {
-        el.appendChild(childNode.placeholder);
-        expandFrag(childNode);
-      } else el.appendChild(childNode);
-    });
-  }
-
-  this.applyAttributes(el, attrs);
-  return el;
-};
-
-PROTO.applyAttributes = function (el, attrs) {
-  const SELF = this;
-  if (attrs[PRIVATE_KEY]) {
-    attrs[PRIVATE_KEY].forEach((obj) => Object.assign(attrs, obj));
-  }
-
+function applyAttributes(ctx, el, attrs) {
   Object.keys(attrs).forEach(function (attrName) {
     if (attrName === PRIVATE_KEY) return;
     const attrValue = attrs[attrName];
     if (EVENT_EXP.test(attrName)) {
-      el.addEventListener(attrName.slice(2).toLowerCase(), function (e) {
+      const evType = attrName.slice(2).toLowerCase();
+      el.addEventListener(evType, function (EV) {
         const result =
-          SELF.scripts[attrValue] && SELF.scripts[attrValue].apply(el, [e]);
-        if (result === true) requestUpdate(SELF);
+          ctx.scripts[attrValue] && ctx.scripts[attrValue].call(el, EV);
+        if (result === true) requestUpdate(ctx);
       });
-    } else if (CUSTOM_ATTRS[attrName]) {
-      CUSTOM_ATTRS[attrName](el, SELF, attrValue);
-    } else {
+    } else if (CUSTOM_ATTRS[attrName])
+      CUSTOM_ATTRS[attrName](el, ctx, attrValue);
+    else {
       el[attrName] = attrValue;
     }
   });
+}
+
+function DOM_FRAG() {
+  this.placeholder = document.createTextNode(EMPTY_STR);
+  this.doc = document.createDocumentFragment();
+  this.cache = { instance: new Map(), ref: new Map() };
+  this.currDOM = [];
+}
+
+DOM_FRAG.prototype.append = function (HTMLNode) {
+  const SELF = this;
+  if (IS_ARRAY(HTMLNode)) HTMLNode.forEach(SELF.append, SELF);
+  else if (HTMLNode instanceof DOM_FRAG) {
+    SELF.append(HTMLNode.placeholder);
+    expandFrag(HTMLNode);
+  } else SELF.doc.appendChild(HTMLNode);
 };
 
+DOM_FRAG.prototype.resolveDynamicContent = function (content) {
+  const SELF = this;
+  clearFrag(SELF);
+  if (IS_ARRAY(content)) content.forEach(SELF.resolveDynamicContent, SELF);
+  else if (typeof content === "object") {
+    const key = content.key || content.index,
+      cacheContainer = content.key
+        ? CACHED
+        : SELF.cache[content.dom[0] ? "instance" : "ref"];
+
+    const result = cacheContainer.has(key)
+      ? requestUpdate(cacheContainer.get(key))
+      : cacheContainer.set(key, new Component(content)).get(key);
+
+    SELF.append(result.DOM);
+  } else SELF.placeholder.textContent = EMPTY_STR + content;
+};
+
+function expandFrag(frag) {
+  const parent = frag.placeholder.parentElement,
+    currDOM = frag.currDOM,
+    childNodes = frag.doc.childNodes;
+
+  currDOM.length = 0;
+  Object.assign(currDOM, childNodes);
+
+  parent.insertBefore(frag.doc, frag.placeholder);
+}
+
+function clearFrag(frag) {
+  const parent = frag.placeholder.parentElement;
+  frag.currDOM.forEach(function (childNode) {
+    parent.removeChild(childNode);
+  });
+}
+
+/**
 PROTO.checkCase = function (childNode) {
   const SELF = this,
     conditionRef = childNode[1].test || true;
@@ -234,59 +287,4 @@ function renderSwitchCase(ctx, children) {
     index = 0;
   }
 }
-
-function DOM_FRAG() {
-  this.placeholder = document.createTextNode(EMPTY_STR);
-  this.doc = document.createDocumentFragment();
-  this.cache = { instance: new Map(), ref: new Map() };
-  this.currDOM = [];
-}
-
-DOM_FRAG.prototype.append = function (HTMLNode) {
-  const SELF = this;
-  if (IS_ARRAY(HTMLNode)) HTMLNode.forEach(SELF.append, SELF);
-  else if (HTMLNode instanceof DOM_FRAG) {
-    SELF.append(HTMLNode.placeholder);
-    expandFrag(HTMLNode);
-  } else SELF.doc.appendChild(HTMLNode);
-};
-
-DOM_FRAG.prototype.resolveDynamicContent = function (content) {
-  const SELF = this;
-  clearFrag(SELF);
-  if (IS_ARRAY(content))
-    content.forEach((comp) => resolveComponent(SELF, comp));
-  else if (typeof content === "object") resolveComponent(SELF, content);
-  else SELF.placeholder.textContent = EMPTY_STR + content;
-};
-
-function resolveComponent(frag, component) {
-  const key = component.key || component.index;
-  const cacheContainer = component.key
-    ? CACHED
-    : frag.cache[component.dom[0] ? "instance" : "ref"];
-
-  const result = cacheContainer.has(key)
-    ? requestUpdate(cacheContainer.get(key))
-    : cacheContainer.set(key, new Component(component)).get(key);
-
-  frag.append(result.DOM);
-}
-
-function expandFrag(frag) {
-  const parent = frag.placeholder.parentElement,
-    currDOM = frag.currDOM,
-    childNodes = frag.doc.childNodes;
-
-  currDOM.length = 0;
-  Object.assign(currDOM, childNodes);
-
-  parent.insertBefore(frag.doc, frag.placeholder);
-}
-
-function clearFrag(frag) {
-  const parent = frag.placeholder.parentElement;
-  frag.currDOM.forEach(function (childNode) {
-    parent.removeChild(childNode);
-  });
-}
+ */
