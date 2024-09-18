@@ -150,7 +150,7 @@ PROTO.createElementNode = function (vNode) {
     vNode[0] = anchorEXP;
   }
 
-  const el = tag === "Frag" ? document.createDocumenrFragment() : document.createElement(tag);
+  const el = tag === "Frag" ? document.createDocumentFragment() : document.createElement(tag);
 
   if (children.length) {
     children.forEach(function (child) {
