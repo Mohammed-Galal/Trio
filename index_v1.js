@@ -126,16 +126,16 @@ function createElementNode(SELF, vNode) {
 
   if (Number.isInteger(vNode[0])) return SELF.renderComponent(vNode);
   else if (tag === switchEXP) return renderSwitchCase(SELF, children);
+  else if (tag === "Frag") return renderFrag();
   else if (tag === linkEXP) {
     vNode[0] = anchorEXP;
   }
 
-  let el;
+  let el = document.createElement(tag);
 
-  if (tag === "Frag") el = document.createDocumentFragment();
-  else {
-    el = document.createElement(tag);
-    applyAttributes(SELF, attrs, el);
+  if (attrs.key) {
+    const cacheContainer = SELF.cacheContainer;
+    // push observer function to ctx.observers in order to add element's parent context to ctx.pendingUpdates
   }
 
   if (children.length) {
@@ -148,16 +148,12 @@ function createElementNode(SELF, vNode) {
     });
   }
 
+  applyAttributes(SELF, attrs, el);
+
   return el;
 }
 
 function applyAttributes(ctx, attrs, el) {
-  const cacheContainer = ctx.cacheContainer;
-
-  if (attrs.key) {
-    // push observer function to ctx.observers in order to add element's parent context to ctx.pendingUpdates
-  }
-
   Object.keys(attrs).forEach(function (attrName) {
     if (attrName === PRIVATE_KEY) return;
     const attrValue = attrs[attrName];
