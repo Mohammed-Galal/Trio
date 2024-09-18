@@ -65,8 +65,7 @@ function Component(jsxRoot, props = {}) {
   }
 
   this.components = jsxRoot.components;
-  const DOM = this.createElementNode(jsxRoot.dom);
-  this.DOM = DOM instanceof DOM_FRAG ? DOM.doc : DOM;
+  this.DOM = this.createElementNode(jsxRoot.dom);
 }
 
 const PROTO = Component.prototype;
@@ -150,7 +149,10 @@ PROTO.createElementNode = function (vNode) {
     vNode[0] = anchorEXP;
   }
 
-  const el = tag === "Frag" ? document.createDocumentFragment() : document.createElement(tag);
+  const el =
+    tag === "Frag"
+      ? document.createDocumentFragment()
+      : document.createElement(tag);
 
   if (children.length) {
     children.forEach(function (child) {
@@ -243,7 +245,10 @@ function DOM_FRAG() {
 DOM_FRAG.prototype.append = function (HTMLNode) {
   const SELF = this;
   if (IS_ARRAY(HTMLNode)) HTMLNode.forEach(SELF.append, SELF);
-  else SELF.doc.appendChild(HTMLNode);
+  else if (HTMLNode instanceof DOM_FRAG) {
+    SELF.append(HTMLNode.placeholder);
+    expandFrag(HTMLNode);
+  } else SELF.doc.appendChild(HTMLNode);
 };
 
 DOM_FRAG.prototype.resolveDynamicContent = function (content) {
@@ -268,7 +273,7 @@ function resolveComponent(frag, component) {
   frag.append(result.DOM);
 }
 
-function expandFragInto(frag) {
+function expandFrag(frag) {
   const parent = frag.placeholder.parentElement,
     currDOM = frag.currDOM,
     childNodes = frag.doc.childNodes;
