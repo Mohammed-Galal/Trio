@@ -48,7 +48,6 @@ function requestUpdate(ctx) {
   return ctx;
 }
 
-// DOM: DocumentFragment || HTMLElement
 function Component(jsxRoot, props = {}) {
   if (!(this instanceof Component)) return new Component(jsxRoot, props);
   else if (typeof jsxRoot === "function") {
@@ -79,8 +78,8 @@ PROTO.createNode = function (node) {
     case Number:
       const SELF = this,
         frag = new DOM_FRAG();
-      frag.resolveDynamicContent(this.scripts[node]);
-      this.observers.push(function () {
+      frag.resolveDynamicContent(SELF.scripts[node]);
+      SELF.observers.push(function () {
         clearFrag(frag);
         frag.resolveDynamicContent(SELF.scripts[node]);
         expandFrag(frag);
@@ -97,8 +96,9 @@ PROTO.createElementNode = function (vNode) {
     [tag, attrs, children] = vNode;
 
   Object.assign.apply(attrs, attrs[PRIVATE_KEY]);
+  delete attrs[PRIVATE_KEY];
 
-  if (Number.isInteger(vNode[0])) return this.renderComponent(vNode);
+  if (Number.isInteger(vNode[0])) return SELF.renderComponent(vNode);
   else if (tag === switchEXP) return renderSwitchCase(SELF, children);
   else if (tag === linkEXP) {
     vNode[0] = anchorEXP;
@@ -125,48 +125,45 @@ PROTO.createElementNode = function (vNode) {
   return el;
 };
 
-// returns DocumentFragment : HTMLElement
 PROTO.renderComponent = function (vNode) {
   const SELF = this,
     [tag, attrs, children] = vNode;
 
   let C;
 
-  if (attrs) {
-    // attrs.forEach(handleProp);
-    function handleProp(key) {
-      const value = attrs[key];
-      if (Number.isInteger(value)) {
-        attrs[key] = SELF.scripts[value];
-        SELF.observers.push(function () {
-          const newVal = SELF.scripts[value];
-          if (attrs[key] === newVal) return;
-          attrs[key] = newVal;
-          SELF.pendingUpdates.add(C);
-        });
-      }
+  attrs.forEach(handleProp);
+  function handleProp(key) {
+    const value = attrs[key];
+    if (Number.isInteger(value)) {
+      attrs[key] = SELF.scripts[value];
+      SELF.observers.push(function () {
+        const newVal = SELF.scripts[value];
+        if (attrs[key] === newVal) return;
+        attrs[key] = newVal;
+        SELF.pendingUpdates.add(C);
+      });
     }
   }
 
-  if (children) {
-    const DOMFrag = new DOM_FRAG();
-    let didRendered = false;
+  // if (children) {
+  //   const DOMFrag = new DOM_FRAG();
+  //   let didRendered = false;
 
-    Object.defineProperty(attrs, "Children", {
-      get() {
-        if (!didRendered) {
-          children.forEach(appendChildNode);
-          didRendered = true;
-        }
-        return DOMFrag;
-      },
-    });
+  //   Object.defineProperty(attrs, "Children", {
+  //     get() {
+  //       if (!didRendered) {
+  //         children.forEach(appendChildNode);
+  //         didRendered = true;
+  //       }
+  //       return DOMFrag;
+  //     },
+  //   });
 
-    function appendChildNode(node) {
-      const childNode = SELF.createNode(node);
-      DOMFrag.append(childNode);
-    }
-  }
+  //   function appendChildNode(node) {
+  //     const childNode = SELF.createNode(node);
+  //     DOMFrag.append(childNode);
+  //   }
+  // }
 
   C = new Component(SELF.components[tag], attrs);
   return C.DOM;
