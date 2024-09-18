@@ -155,7 +155,7 @@ function applyAttributes(ctx, attrs, el) {
   const cacheContainer = ctx.cacheContainer;
 
   if (attrs.key) {
-    // add element's parent context to ctx.pendingUpdates
+    // push observer function to ctx.observers in order to add element's parent context to ctx.pendingUpdates
   }
 
   Object.keys(attrs).forEach(function (attrName) {
