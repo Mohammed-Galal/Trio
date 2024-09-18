@@ -48,6 +48,7 @@ function requestUpdate(ctx) {
   return ctx;
 }
 
+// DOM: DocumentFragment || HTMLElement
 function Component(jsxRoot, props = {}) {
   if (!(this instanceof Component)) return new Component(jsxRoot, props);
   else if (typeof jsxRoot === "function") {
@@ -64,7 +65,8 @@ function Component(jsxRoot, props = {}) {
   }
 
   this.components = jsxRoot.components;
-  this.DOM = this.createElementNode(jsxRoot.dom);
+  const DOM = this.createElementNode(jsxRoot.dom);
+  this.DOM = DOM instanceof DOM_FRAG ? DOM.doc : DOM;
 }
 
 const PROTO = Component.prototype;
@@ -74,6 +76,7 @@ PROTO.createNode = function (node) {
     case String:
       return document.createTextNode(node);
 
+    // returns DOM_FRAG
     case Number:
       const SELF = this,
         frag = new DOM_FRAG();
@@ -90,6 +93,7 @@ PROTO.createNode = function (node) {
   }
 };
 
+// returns DocumentFragment : HTMLElement
 PROTO.renderComponent = function (vNode) {
   const SELF = this,
     [tag, attrs, children] = vNode;
@@ -150,7 +154,7 @@ PROTO.createElementNode = function (vNode) {
 
   if (children.length) {
     children.forEach(function (child) {
-      const childNode = SELF.createNode(child, el);
+      const childNode = SELF.createNode(child);
       if (childNode instanceof DOM_FRAG) {
         el.appendChild(childNode.placeholder);
         expandFrag(childNode);
@@ -231,22 +235,20 @@ function renderSwitchCase(ctx, children) {
 
 function DOM_FRAG() {
   this.placeholder = document.createTextNode(EMPTY_STR);
+  this.doc = document.createDocumentFragment();
   this.cache = { instance: new Map(), ref: new Map() };
   this.currDOM = [];
 }
 
 DOM_FRAG.prototype.append = function (HTMLNode) {
   const SELF = this;
-
   if (IS_ARRAY(HTMLNode)) HTMLNode.forEach(SELF.append, SELF);
-  else SELF.currDOM.push(HTMLNode);
+  else SELF.doc.appendChild(HTMLNode);
 };
 
 DOM_FRAG.prototype.resolveDynamicContent = function (content) {
   const SELF = this;
-
-  clearFrag(SELF, true);
-
+  clearFrag(SELF);
   if (IS_ARRAY(content))
     content.forEach((comp) => resolveComponent(SELF, comp));
   else if (typeof content === "object") resolveComponent(SELF, content);
@@ -266,23 +268,20 @@ function resolveComponent(frag, component) {
   frag.append(result.DOM);
 }
 
-function expandFrag(frag) {
-  const parent = frag.placeholder.parentElement;
+function expandFragInto(frag) {
+  const parent = frag.placeholder.parentElement,
+    currDOM = frag.currDOM,
+    childNodes = frag.doc.childNodes;
 
-  frag.currDOM.forEach(function (childNode) {
-    if (childNode instanceof DOM_FRAG) {
-      parent.insertBefore(childNode.placeholder, frag.placeholder);
-      expandFrag(childNode);
-    } else parent.insertBefore(childNode, frag.placeholder);
-  });
+  currDOM.length = 0;
+  Object.assign(currDOM, childNodes);
+
+  parent.insertBefore(frag.doc, frag.placeholder);
 }
 
-function clearFrag(frag, reset) {
+function clearFrag(frag) {
   const parent = frag.placeholder.parentElement;
   frag.currDOM.forEach(function (childNode) {
-    if (childNode instanceof DOM_FRAG) clearFrag(childNode);
-    else parent.removeChild(childNode);
+    parent.removeChild(childNode);
   });
-
-  reset && (frag.currDOM.length = 0);
 }
