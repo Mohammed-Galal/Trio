@@ -21,6 +21,14 @@ const caseFiltration = (CN) => IS_ARRAY(CN) && CN[0] === CASE_EXP;
 let isUpdating = false,
   currentCTX = null;
 
+function batchUpdates() {
+  if (isUpdating) return;
+  isUpdating = true;
+  PENDING_UPDATES.forEach(requestUpdate);
+  PENDING_UPDATES.clear();
+  isUpdating = false;
+}
+
 CUSTOM_ATTRS["ref"] = function (el, ctx, attrValue) {
   ctx.scripts[attrValue] && ctx.scripts[attrValue].call(el, el);
 };
@@ -47,12 +55,7 @@ function requestUpdate(ctx) {
   if (ctx.scripts) {
     ctx.scripts = ctx.initScripts();
     ctx.observers.forEach((observer) => observer());
-    if (isUpdating === false) {
-      isUpdating = true;
-      PENDING_UPDATES.forEach(requestUpdate);
-      PENDING_UPDATES.clear();
-      isUpdating = true;
-    }
+    batchUpdates();
   }
   return ctx;
 }
@@ -99,9 +102,7 @@ PROTO.createNode = function (node) {
       Object.assign.apply(attrs, attrs[PRIVATE_KEY]);
       delete attrs[PRIVATE_KEY];
 
-
       const key = attrs.key;
-
 
       if (key) {
         delete attrs.key;
