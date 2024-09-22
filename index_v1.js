@@ -1,20 +1,25 @@
-const ERR = new Error();
 const APP = {};
+const PENDING_UPDATES = new Set(); // updates Queue
+
+const IS_INT = Number.isInteger;
 const IS_ARRAY = Array.isArray;
 const EMPTY_STR = "";
-const PRIVATE_KEY = "#Xtends";
-const EVENT_EXP = /^on[A-Z]/;
-const CUSTOM_ATTRS = {};
-const CACHED = new Map();
-const paramErr = { name: "useForce Hook Rules", message: "" };
 
-const switchEXP = "Switch",
-  caseEXP = "Case",
-  linkEXP = "Link",
-  anchorEXP = "a",
-  caseFiltration = (CN) => IS_ARRAY(CN) && CN[0] === caseEXP;
+const CUSTOM_ATTRS = {},
+  PRIVATE_KEY = "#Xtends",
+  SWITCH_EXP = "Switch",
+  CASE_EXP = "Case",
+  LINK_EXP = "Link",
+  ANCHOR_EXP = "a",
+  EVENT_EXP = /^on[A-Z]/;
 
-let currentCTX = null;
+const ERR = new Error(),
+  errOpts = { name: "useForce Hook Rules", message: "" };
+
+const caseFiltration = (CN) => IS_ARRAY(CN) && CN[0] === CASE_EXP;
+
+let isUpdating = false,
+  currentCTX = null;
 
 CUSTOM_ATTRS["ref"] = function (el, ctx, attrValue) {
   ctx.scripts[attrValue] && ctx.scripts[attrValue].call(el, el);
@@ -30,7 +35,7 @@ CUSTOM_ATTRS["style"] = function (el, ctx, attrValue) {
 };
 
 window.forceUpdate = function (fn) {
-  if (typeof fn !== "function") throw Object.assign(ERR, paramErr);
+  if (typeof fn !== "function") throw Object.assign(ERR, errOpts);
   const ctx = currentCTX;
   return function () {
     fn();
@@ -42,8 +47,12 @@ function requestUpdate(ctx) {
   if (ctx.scripts) {
     ctx.scripts = ctx.initScripts();
     ctx.observers.forEach((observer) => observer());
-    ctx.pendingUpdates.forEach(requestUpdate);
-    ctx.pendingUpdates.clear();
+    if (isUpdating === false) {
+      isUpdating = true;
+      PENDING_UPDATES.forEach(requestUpdate);
+      PENDING_UPDATES.clear();
+      isUpdating = true;
+    }
   }
   return ctx;
 }
@@ -56,18 +65,13 @@ function Component(jsxRoot, props) {
     currentCTX = null;
   }
 
+  this.components = jsxRoot.components;
+
   if (jsxRoot.scripts) {
     this.initScripts = jsxRoot.scripts;
     this.scripts = this.initScripts();
     this.observers = [];
-    this.pendingUpdates = new Set();
   }
-
-  const cacheContainer = jsxRoot.cacheContainer;
-  cacheContainer && (this.cacheContainer = cacheContainer);
-
-  this.components = jsxRoot.components;
-  this.DOM = createElementNode(this, jsxRoot.dom);
 }
 
 const PROTO = Component.prototype;
@@ -90,32 +94,20 @@ PROTO.createNode = function (node) {
       return frag;
 
     default:
-      return createElementNode(this, node);
+      const key = node[1].key;
+      if (key) {
+        delete node[1].key;
+
+        const observerStart = this.observers.length - 1;
+        const result = createElementNode(this, node);
+        const observerEnd = this.observers.length - 1;
+
+        this.cacheContainer[key] = {
+          update() {},
+          dom: result,
+        };
+      } else return createElementNode(this, node);
   }
-};
-
-PROTO.renderComponent = function (vNode) {
-  const SELF = this,
-    [tag, attrs, children] = vNode;
-
-  let C;
-
-  attrs.forEach(handleProp);
-  function handleProp(key) {
-    const value = attrs[key];
-    if (Number.isInteger(value)) {
-      attrs[key] = SELF.scripts[value];
-      SELF.observers.push(function () {
-        const newVal = SELF.scripts[value];
-        if (attrs[key] === newVal) return;
-        attrs[key] = newVal;
-        SELF.pendingUpdates.add(C);
-      });
-    }
-  }
-
-  C = new Component(SELF.components[tag], attrs);
-  return C.DOM;
 };
 
 function createElementNode(SELF, vNode) {
@@ -125,18 +117,13 @@ function createElementNode(SELF, vNode) {
   delete attrs[PRIVATE_KEY];
 
   if (Number.isInteger(vNode[0])) return SELF.renderComponent(vNode);
-  else if (tag === switchEXP) return renderSwitchCase(SELF, children);
+  else if (tag === SWITCH_EXP) return renderSwitchCase(SELF, children);
   else if (tag === "Frag") return renderFrag();
-  else if (tag === linkEXP) {
-    vNode[0] = anchorEXP;
+  else if (tag === LINK_EXP) {
+    vNode[0] = ANCHOR_EXP;
   }
 
-  let el = document.createElement(tag);
-
-  if (attrs.key) {
-    const cacheContainer = SELF.cacheContainer;
-    // push observer function to ctx.observers in order to add element's parent context to ctx.pendingUpdates
-  }
+  const el = document.createElement(tag);
 
   if (children.length) {
     children.forEach(function (child) {
@@ -149,27 +136,30 @@ function createElementNode(SELF, vNode) {
   }
 
   applyAttributes(SELF, attrs, el);
-
   return el;
 }
 
-function applyAttributes(ctx, attrs, el) {
-  Object.keys(attrs).forEach(function (attrName) {
-    if (attrName === PRIVATE_KEY) return;
-    const attrValue = attrs[attrName];
-    if (EVENT_EXP.test(attrName)) {
-      const evType = attrName.slice(2).toLowerCase();
-      el.addEventListener(evType, function (EV) {
-        const result =
-          ctx.scripts[attrValue] && ctx.scripts[attrValue].call(el, EV);
-        if (result === true) requestUpdate(ctx);
+function renderComponent(SELF, vNode) {
+  const [tag, attrs, children] = vNode;
+
+  const jsxRoot = SELF.components[tag],
+    C = new Component(jsxRoot);
+
+  Object.keys(attrs).forEach(handleProp);
+  function handleProp(key) {
+    const value = attrs[key];
+    if (IS_INT(value)) {
+      attrs[key] = SELF.scripts[value];
+      SELF.observers.push(function () {
+        const newVal = SELF.scripts[value];
+        if (attrs[key] === newVal) return;
+        attrs[key] = newVal;
+        PENDING_UPDATES.add(C);
       });
-    } else if (CUSTOM_ATTRS[attrName])
-      CUSTOM_ATTRS[attrName](el, ctx, attrValue);
-    else {
-      el[attrName] = attrValue;
     }
-  });
+  }
+
+  return createElementNode(C, jsxRoot.dom);
 }
 
 function DOM_FRAG() {
@@ -193,9 +183,9 @@ DOM_FRAG.prototype.resolveDynamicContent = function (content) {
   clearFrag(SELF);
   if (IS_ARRAY(content)) content.forEach(SELF.resolveDynamicContent, SELF);
   else if (typeof content === "object") {
-    content.cacheContainer = SELF.cache;
-    const result = new Component(content).DOM;
-    SELF.append(result);
+    const ctx = new Component(content);
+    ctx.cacheContainer = SELF.cache;
+    SELF.append(createElementNode(ctx, content.dom));
   } else SELF.placeholder.textContent = content || EMPTY_STR + content;
 };
 
@@ -214,6 +204,25 @@ function clearFrag(frag) {
   const parent = frag.placeholder.parentElement;
   frag.currDOM.forEach(function (childNode) {
     parent.removeChild(childNode);
+  });
+}
+
+function applyAttributes(ctx, attrs, el) {
+  Object.keys(attrs).forEach(function (attrName) {
+    if (attrName === PRIVATE_KEY) return;
+    const attrValue = attrs[attrName];
+    if (EVENT_EXP.test(attrName)) {
+      const evType = attrName.slice(2).toLowerCase();
+      el.addEventListener(evType, function (EV) {
+        const result =
+          ctx.scripts[attrValue] && ctx.scripts[attrValue].call(el, EV);
+        if (result === true) requestUpdate(ctx);
+      });
+    } else if (CUSTOM_ATTRS[attrName])
+      CUSTOM_ATTRS[attrName](el, ctx, attrValue);
+    else {
+      el[attrName] = attrValue;
+    }
   });
 }
 
