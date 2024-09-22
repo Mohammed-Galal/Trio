@@ -94,9 +94,17 @@ PROTO.createNode = function (node) {
       return frag;
 
     default:
-      const key = node[1].key;
+      const attrs = node[1];
+
+      Object.assign.apply(attrs, attrs[PRIVATE_KEY]);
+      delete attrs[PRIVATE_KEY];
+
+
+      const key = attrs.key;
+
+
       if (key) {
-        delete node[1].key;
+        delete attrs.key;
 
         const observerStart = this.observers.length - 1;
         const result = createElementNode(this, node);
@@ -112,9 +120,6 @@ PROTO.createNode = function (node) {
 
 function createElementNode(SELF, vNode) {
   const [tag, attrs, children] = vNode;
-
-  Object.assign.apply(attrs, attrs[PRIVATE_KEY]);
-  delete attrs[PRIVATE_KEY];
 
   if (Number.isInteger(vNode[0])) return SELF.renderComponent(vNode);
   else if (tag === SWITCH_EXP) return renderSwitchCase(SELF, children);
