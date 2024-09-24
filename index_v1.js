@@ -1,4 +1,3 @@
-const TRASH = new DocumentFragment();
 const CUSTOM_ATTRS = {};
 const PENDING_UPDATES = new Set(); // updates Queue
 
@@ -17,7 +16,8 @@ const caseFiltration = (CN) => IS_ARRAY(CN) && CN[0] === CASE_EXP;
 const ERR = new Error(),
   errOpts = { name: "useForce Hook Rules", message: "" };
 
-let isUpdating = false,
+let TRASH = new DocumentFragment(),
+  isUpdating = false,
   currentCTX = null;
 
 CUSTOM_ATTRS.ref = function (el, ctx, attrValue) {
@@ -47,17 +47,16 @@ function requestUpdate(ctx) {
   if (ctx.scripts) {
     ctx.scripts = ctx.initScripts();
     ctx.observers.forEach((observer) => observer());
-    batchUpdates();
+    isUpdating || batchUpdates();
   }
   return ctx;
 }
 
 function batchUpdates() {
-  if (isUpdating) return;
   isUpdating = true;
   PENDING_UPDATES.forEach(requestUpdate);
   PENDING_UPDATES.clear();
-  TRASH.replaceChildren();
+  TRASH = new DocumentFragment();
   isUpdating = false;
 }
 
@@ -208,10 +207,10 @@ function DOM_FRAG() {
 
 DOM_FRAG.prototype.insertNode = function (HTMLNode) {
   const SELF = this;
-  if (IS_ARRAY(HTMLNode)) return HTMLNode.forEach(SELF.append, SELF);
-  HTMLNode instanceof DOM_FRAG
-    ? HTMLNode.appendTo(SELF.frag)
-    : SELF.frag.appendChild(HTMLNode);
+  if (IS_ARRAY(HTMLNode))
+    for (let i = 0; i < HTMLNode.length; ) SELF.insertNode(HTMLNode[i++]);
+  else if (HTMLNode instanceof DOM_FRAG) HTMLNode.appendTo(SELF.frag);
+  else SELF.frag.appendChild(HTMLNode);
 };
 
 DOM_FRAG.prototype.appendTo = function (containerNode) {
