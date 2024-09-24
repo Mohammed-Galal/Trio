@@ -79,85 +79,35 @@ function Component(jsxRoot, props) {
 
 const PROTO = Component.prototype;
 
-DOM_FRAG.prototype.resolveDynamicContent = function (content) {
-  const SELF = this;
-  hideFrag(SELF);
-  if (IS_ARRAY(content)) content.forEach(SELF.resolveDynamicContent, SELF);
-  else if (typeof content === "object") {
-    const ctx = new Component(content);
-    ctx.cacheContainer = SELF.cache;
-    SELF.append(createElementNode(ctx, content.dom));
-  } else SELF.placeholder.textContent = content || EMPTY_STR + content;
-};
-
-// returns {textNode|nodeElement|DOM_FRAG}
-PROTO.createNode = function (node) {
-  switch (node.constructor) {
-    case String:
-      return document.createTextNode(node);
-
-    case Number:
-      const SELF = this,
-        frag = new DOM_FRAG();
-      frag.resolveDynamicContent(SELF.scripts[node]);
-      SELF.observers.push(function () {
-        hideFrag(frag, true);
-        frag.resolveDynamicContent(SELF.scripts[node]);
-        expandFrag(frag);
-      });
-      return frag;
-
-    default:
-      const attrs = node[1];
-
-      Object.assign.apply(attrs, attrs[PRIVATE_KEY]);
-      delete attrs[PRIVATE_KEY];
-
-      const key = attrs.key;
-
-      if (key) {
-        delete attrs.key;
-
-        const observerStart = this.observers.length - 1;
-        const result = createElementNode(this, node);
-        const observerEnd = this.observers.length - 1;
-
-        this.cacheContainer[key] = {
-          update() {},
-          dom: result,
-        };
-      } else return createElementNode(this, node);
-  }
-};
-
-function createElementNode(SELF, vNode) {
+PROTO.createElementNode = function createElementNode(vNode) {
   const [tag, attrs, children] = vNode;
 
-  if (Number.isInteger(vNode[0])) return SELF.renderComponent(vNode);
-  else if (tag === SWITCH_EXP) return renderSwitchCase(SELF, children);
+  if (tag === SWITCH_EXP) return renderSwitchCase(SELF, children);
   else if (tag === "Frag") return renderFrag();
   else if (tag === LINK_EXP) {
     vNode[0] = ANCHOR_EXP;
   }
 
   const el = document.createElement(tag);
-
-  if (children.length) {
-    children.forEach(function (child) {
-      const childNode = SELF.createNode(child);
-      if (childNode instanceof DOM_FRAG) {
-        el.appendChild(childNode.placeholder);
-        expandFrag(childNode);
-      } else el.appendChild(childNode);
-    });
-  }
-
+  renderChildrenInto(SELF, children, el);
   applyAttributes(SELF, attrs, el);
   return el;
-}
+};
 
-function renderComponent(SELF, vNode) {
-  const [tag, attrs, children] = vNode;
+PROTO.resolveDynamicContent = function (content) {
+  // const SELF = this;
+  // hideFrag(SELF);
+  // if (IS_ARRAY(content)) content.forEach(SELF.resolveDynamicContent, SELF);
+  // else if (typeof content === "object") {
+  //   const ctx = new Component(content);
+  //   ctx.cacheContainer = SELF.cache;
+  //   SELF.append(createElementNode(ctx, content.dom));
+  // } else SELF.placeholder.textContent = content || EMPTY_STR + content;
+};
+
+PROTO.createComponent = function (vNode) {
+  const SELF = this,
+    [tag, attrs, children] = vNode;
 
   const jsxRoot = SELF.components[tag],
     C = new Component(jsxRoot);
@@ -176,7 +126,64 @@ function renderComponent(SELF, vNode) {
     }
   }
 
-  return createElementNode(C, jsxRoot.dom);
+  return C.createElementNode(jsxRoot.dom);
+};
+
+function renderChildrenInto(ctx, children, el) {
+  children ||= [];
+
+  let index = 0;
+  while (index < children.length) {
+    const node = children[index++],
+      nodeType = node.constructor;
+
+    switch (nodeType) {
+      case String:
+        el.appendChild(document.createTextNode(node));
+        break;
+
+      case Number:
+        const frag = new DOM_FRAG();
+        frag.resolveDynamicContent(ctx.scripts[node]);
+        el.appendChild(frag.frag);
+        ctx.observers.push(function () {
+          hideFrag(frag, true);
+          frag.resolveDynamicContent(ctx.scripts[node]);
+          expandFrag(frag);
+        });
+        break;
+
+      default:
+        const attrs = node[1];
+
+        Object.assign.apply(attrs, attrs[PRIVATE_KEY]);
+        delete attrs[PRIVATE_KEY];
+
+        const key = attrs.key,
+          targetMethod = IS_INT(node[0]) ? renderComponent : createElementNode;
+
+        let resultElement = null;
+
+        if (key) {
+          delete attrs.key;
+
+          const observerStart = this.observers.length - 1;
+          const result = createElementNode(this, node);
+          const observerEnd = this.observers.length - 1;
+
+          this.cacheContainer[key] = {
+            update() {},
+            dom: result,
+          };
+        }
+
+        resultElement ||= targetMethod(ctx, node);
+
+        resultElement instanceof DOM_FRAG
+          ? resultElement.appendTo(el)
+          : el.appendChild(resultElement);
+    }
+  }
 }
 
 function applyAttributes(ctx, attrs, el) {
