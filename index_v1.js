@@ -82,15 +82,15 @@ const PROTO = Component.prototype;
 PROTO.createElementNode = function createElementNode(vNode) {
   const [tag, attrs, children] = vNode;
 
-  if (tag === SWITCH_EXP) return renderSwitchCase(SELF, children);
+  if (tag === SWITCH_EXP) return renderSwitchCase(this, children);
   else if (tag === "Frag") return renderFrag();
   else if (tag === LINK_EXP) {
     vNode[0] = ANCHOR_EXP;
   }
 
   const el = document.createElement(tag);
-  renderChildrenInto(SELF, children, el);
-  applyAttributes(SELF, attrs, el);
+  renderChildrenInto(this, children, el);
+  applyAttributes(this, attrs, el);
   return el;
 };
 
