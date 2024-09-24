@@ -1,11 +1,12 @@
 const APP = {};
+const CUSTOM_ATTRS = {};
 const PENDING_UPDATES = new Set(); // updates Queue
 
 const IS_INT = Number.isInteger;
 const IS_ARRAY = Array.isArray;
-const EMPTY_STR = "";
+const caseFiltration = (CN) => IS_ARRAY(CN) && CN[0] === CASE_EXP;
 
-const CUSTOM_ATTRS = {},
+const EMPTY_STR = "",
   PRIVATE_KEY = "#Xtends",
   SWITCH_EXP = "Switch",
   CASE_EXP = "Case",
@@ -16,10 +17,21 @@ const CUSTOM_ATTRS = {},
 const ERR = new Error(),
   errOpts = { name: "useForce Hook Rules", message: "" };
 
-const caseFiltration = (CN) => IS_ARRAY(CN) && CN[0] === CASE_EXP;
-
 let isUpdating = false,
   currentCTX = null;
+
+CUSTOM_ATTRS.ref = function (el, ctx, attrValue) {
+  ctx.scripts[attrValue] && ctx.scripts[attrValue].call(el, el);
+};
+
+CUSTOM_ATTRS.style = function (el, ctx, attrValue) {
+  const styleObject = ctx.scripts[attrValue];
+  if (styleObject) {
+    Object.assign(el.style, styleObject);
+
+    ctx.observers.push(() => Object.assign(el.style, styleObject));
+  }
+};
 
 function batchUpdates() {
   if (isUpdating) return;
@@ -29,27 +41,14 @@ function batchUpdates() {
   isUpdating = false;
 }
 
-CUSTOM_ATTRS["ref"] = function (el, ctx, attrValue) {
-  ctx.scripts[attrValue] && ctx.scripts[attrValue].call(el, el);
-};
-
-CUSTOM_ATTRS["style"] = function (el, ctx, attrValue) {
-  const styleObject = ctx.scripts[attrValue];
-  if (styleObject) {
-    Object.assign(el.style, styleObject);
-
-    ctx.observers.push(() => Object.assign(el.style, styleObject));
-  }
-};
-
-window.forceUpdate = function (fn) {
+function forceUpdate(fn) {
   if (typeof fn !== "function") throw Object.assign(ERR, errOpts);
   const ctx = currentCTX;
   return function () {
     fn();
     requestUpdate(ctx);
   };
-};
+}
 
 function requestUpdate(ctx) {
   if (ctx.scripts) {
@@ -90,7 +89,7 @@ PROTO.createNode = function (node) {
         frag = new DOM_FRAG();
       frag.resolveDynamicContent(SELF.scripts[node]);
       SELF.observers.push(function () {
-        clearFrag(frag);
+        hideFrag(frag, true);
         frag.resolveDynamicContent(SELF.scripts[node]);
         expandFrag(frag);
       });
@@ -170,23 +169,21 @@ function renderComponent(SELF, vNode) {
 
 function DOM_FRAG() {
   this.placeholder = document.createTextNode(EMPTY_STR);
-  this.doc = document.createDocumentFragment();
+  this.frag = document.createDocumentFragment();
   this.cache = new Map();
-  this.currDOM = [];
+  this.nodes = [];
 }
 
 DOM_FRAG.prototype.append = function (HTMLNode) {
   const SELF = this;
-  if (IS_ARRAY(HTMLNode)) HTMLNode.forEach(SELF.append, SELF);
-  else if (HTMLNode instanceof DOM_FRAG) {
-    SELF.append(HTMLNode.placeholder);
-    expandFrag(HTMLNode);
-  } else SELF.doc.appendChild(HTMLNode);
+  if (IS_ARRAY(HTMLNode)) return HTMLNode.forEach(SELF.append, SELF);
+  if (HTMLNode instanceof DOM_FRAG) SELF.frag.appendChild(HTMLNode.frag);
+  else SELF.frag.appendChild(HTMLNode);
 };
 
 DOM_FRAG.prototype.resolveDynamicContent = function (content) {
   const SELF = this;
-  clearFrag(SELF);
+  hideFrag(SELF);
   if (IS_ARRAY(content)) content.forEach(SELF.resolveDynamicContent, SELF);
   else if (typeof content === "object") {
     const ctx = new Component(content);
@@ -197,20 +194,18 @@ DOM_FRAG.prototype.resolveDynamicContent = function (content) {
 
 function expandFrag(frag) {
   const parent = frag.placeholder.parentElement,
-    currDOM = frag.currDOM,
-    childNodes = frag.doc.childNodes;
+    currDOM = frag.nodes,
+    childNodes = frag.frag.childNodes;
 
-  currDOM.length = 0;
   Object.assign(currDOM, childNodes);
+  currDOM.length = childNodes.length;
 
-  parent.insertBefore(frag.doc, frag.placeholder);
+  parent.insertBefore(frag.frag, frag.placeholder);
 }
 
-function clearFrag(frag) {
-  const parent = frag.placeholder.parentElement;
-  frag.currDOM.forEach(function (childNode) {
-    parent.removeChild(childNode);
-  });
+function hideFrag(frag, clear) {
+  frag.frag.replaceChildren(frag.nodes);
+  clear && frag.frag.replaceChildren();
 }
 
 function applyAttributes(ctx, attrs, el) {
