@@ -1,10 +1,6 @@
-const APP = {};
+const TRASH = new DocumentFragment();
 const CUSTOM_ATTRS = {};
 const PENDING_UPDATES = new Set(); // updates Queue
-
-const IS_INT = Number.isInteger;
-const IS_ARRAY = Array.isArray;
-const caseFiltration = (CN) => IS_ARRAY(CN) && CN[0] === CASE_EXP;
 
 const EMPTY_STR = "",
   PRIVATE_KEY = "#Xtends",
@@ -13,6 +9,10 @@ const EMPTY_STR = "",
   LINK_EXP = "Link",
   ANCHOR_EXP = "a",
   EVENT_EXP = /^on[A-Z]/;
+
+const IS_INT = Number.isInteger;
+const IS_ARRAY = Array.isArray;
+const caseFiltration = (CN) => IS_ARRAY(CN) && CN[0] === CASE_EXP;
 
 const ERR = new Error(),
   errOpts = { name: "useForce Hook Rules", message: "" };
@@ -33,14 +33,6 @@ CUSTOM_ATTRS.style = function (el, ctx, attrValue) {
   }
 };
 
-function batchUpdates() {
-  if (isUpdating) return;
-  isUpdating = true;
-  PENDING_UPDATES.forEach(requestUpdate);
-  PENDING_UPDATES.clear();
-  isUpdating = false;
-}
-
 function forceUpdate(fn) {
   if (typeof fn !== "function") throw Object.assign(ERR, errOpts);
   const ctx = currentCTX;
@@ -51,12 +43,22 @@ function forceUpdate(fn) {
 }
 
 function requestUpdate(ctx) {
+  PENDING_UPDATES.delete(ctx);
   if (ctx.scripts) {
     ctx.scripts = ctx.initScripts();
     ctx.observers.forEach((observer) => observer());
     batchUpdates();
   }
   return ctx;
+}
+
+function batchUpdates() {
+  if (isUpdating) return;
+  isUpdating = true;
+  PENDING_UPDATES.forEach(requestUpdate);
+  PENDING_UPDATES.clear();
+  TRASH.replaceChildren();
+  isUpdating = false;
 }
 
 function Component(jsxRoot, props) {
@@ -77,6 +79,17 @@ function Component(jsxRoot, props) {
 }
 
 const PROTO = Component.prototype;
+
+DOM_FRAG.prototype.resolveDynamicContent = function (content) {
+  const SELF = this;
+  hideFrag(SELF);
+  if (IS_ARRAY(content)) content.forEach(SELF.resolveDynamicContent, SELF);
+  else if (typeof content === "object") {
+    const ctx = new Component(content);
+    ctx.cacheContainer = SELF.cache;
+    SELF.append(createElementNode(ctx, content.dom));
+  } else SELF.placeholder.textContent = content || EMPTY_STR + content;
+};
 
 // returns {textNode|nodeElement|DOM_FRAG}
 PROTO.createNode = function (node) {
@@ -167,47 +180,6 @@ function renderComponent(SELF, vNode) {
   return createElementNode(C, jsxRoot.dom);
 }
 
-function DOM_FRAG() {
-  this.placeholder = document.createTextNode(EMPTY_STR);
-  this.frag = document.createDocumentFragment();
-  this.cache = new Map();
-  this.nodes = [];
-}
-
-DOM_FRAG.prototype.append = function (HTMLNode) {
-  const SELF = this;
-  if (IS_ARRAY(HTMLNode)) return HTMLNode.forEach(SELF.append, SELF);
-  if (HTMLNode instanceof DOM_FRAG) SELF.frag.appendChild(HTMLNode.frag);
-  else SELF.frag.appendChild(HTMLNode);
-};
-
-DOM_FRAG.prototype.resolveDynamicContent = function (content) {
-  const SELF = this;
-  hideFrag(SELF);
-  if (IS_ARRAY(content)) content.forEach(SELF.resolveDynamicContent, SELF);
-  else if (typeof content === "object") {
-    const ctx = new Component(content);
-    ctx.cacheContainer = SELF.cache;
-    SELF.append(createElementNode(ctx, content.dom));
-  } else SELF.placeholder.textContent = content || EMPTY_STR + content;
-};
-
-function expandFrag(frag) {
-  const parent = frag.placeholder.parentElement,
-    currDOM = frag.nodes,
-    childNodes = frag.frag.childNodes;
-
-  Object.assign(currDOM, childNodes);
-  currDOM.length = childNodes.length;
-
-  parent.insertBefore(frag.frag, frag.placeholder);
-}
-
-function hideFrag(frag, clear) {
-  frag.frag.replaceChildren(frag.nodes);
-  clear && frag.frag.replaceChildren();
-}
-
 function applyAttributes(ctx, attrs, el) {
   Object.keys(attrs).forEach(function (attrName) {
     if (attrName === PRIVATE_KEY) return;
@@ -226,6 +198,43 @@ function applyAttributes(ctx, attrs, el) {
     }
   });
 }
+
+function DOM_FRAG() {
+  this.placeholder = document.createTextNode(EMPTY_STR);
+  this.frag = document.createDocumentFragment();
+  this.cache = new Map();
+  this.nodes = [];
+}
+
+DOM_FRAG.prototype.insertNode = function (HTMLNode) {
+  const SELF = this;
+  if (IS_ARRAY(HTMLNode)) return HTMLNode.forEach(SELF.append, SELF);
+  HTMLNode instanceof DOM_FRAG
+    ? HTMLNode.appendTo(SELF.frag)
+    : SELF.frag.appendChild(HTMLNode);
+};
+
+DOM_FRAG.prototype.appendTo = function (containerNode) {
+  containerNode.appendChild(this.frag);
+  containerNode.appendChild(this.placeholder);
+};
+
+DOM_FRAG.prototype.hide = function (clear) {
+  const nodes = this.nodes,
+    targetFrag = clear ? TRASH : frag.frag;
+  for (let i = 0; i < nodes.length; ) targetFrag.appendChild(nodes[i++]);
+};
+
+DOM_FRAG.prototype.show = function () {
+  const parent = this.placeholder.parentElement,
+    currDOM = this.nodes,
+    childNodes = this.frag.childNodes;
+
+  Object.assign(currDOM, childNodes);
+  currDOM.length = childNodes.length;
+
+  parent.insertBefore(this.frag, this.placeholder);
+};
 
 // if (children) {
 //   const DOMFrag = new DOM_FRAG();
