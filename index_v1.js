@@ -94,17 +94,6 @@ PROTO.createElementNode = function createElementNode(vNode) {
   return el;
 };
 
-PROTO.resolveDynamicContent = function (content) {
-  // const SELF = this;
-  // hideFrag(SELF);
-  // if (IS_ARRAY(content)) content.forEach(SELF.resolveDynamicContent, SELF);
-  // else if (typeof content === "object") {
-  //   const ctx = new Component(content);
-  //   ctx.cacheContainer = SELF.cache;
-  //   SELF.append(createElementNode(ctx, content.dom));
-  // } else SELF.placeholder.textContent = content || EMPTY_STR + content;
-};
-
 PROTO.createComponent = function (vNode) {
   const SELF = this,
     [tag, attrs, children] = vNode;
@@ -127,6 +116,36 @@ PROTO.createComponent = function (vNode) {
   }
 
   return C.createElementNode(jsxRoot.dom);
+};
+
+PROTO.resolveCache = function (vNode) {
+  const attrs = vNode[1],
+    key = attrs.key;
+
+  if (!key) return false;
+  delete attrs.key;
+
+  const observerStart = this.observers.length - 1;
+  const result = createElementNode(this, vNode);
+  const observerEnd = this.observers.length - 1;
+
+  this.cacheContainer[key] = {
+    update() {},
+    dom: result,
+  };
+
+  return Element;
+};
+
+PROTO.resolveDynamicContent = function (content) {
+  // const SELF = this;
+  // hideFrag(SELF);
+  // if (IS_ARRAY(content)) content.forEach(SELF.resolveDynamicContent, SELF);
+  // else if (typeof content === "object") {
+  //   const ctx = new Component(content);
+  //   ctx.cacheContainer = SELF.cache;
+  //   SELF.append(createElementNode(ctx, content.dom));
+  // } else SELF.placeholder.textContent = content || EMPTY_STR + content;
 };
 
 function renderChildrenInto(ctx, children, el) {
@@ -159,25 +178,10 @@ function renderChildrenInto(ctx, children, el) {
         Object.assign.apply(attrs, attrs[PRIVATE_KEY]);
         delete attrs[PRIVATE_KEY];
 
-        const key = attrs.key,
-          targetMethod = IS_INT(node[0]) ? renderComponent : createElementNode;
-
-        let resultElement = null;
-
-        if (key) {
-          delete attrs.key;
-
-          const observerStart = this.observers.length - 1;
-          const result = createElementNode(this, node);
-          const observerEnd = this.observers.length - 1;
-
-          this.cacheContainer[key] = {
-            update() {},
-            dom: result,
-          };
-        }
-
-        resultElement ||= targetMethod(ctx, node);
+        const targetMethod = IS_INT(node[0])
+            ? renderComponent
+            : createElementNode,
+          resultElement = SELF.resolveCache(node) || targetMethod(ctx, node);
 
         resultElement instanceof DOM_FRAG
           ? resultElement.appendTo(el)
