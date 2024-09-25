@@ -1,7 +1,16 @@
-const CUSTOM_ATTRS = {};
-const PENDING_UPDATES = new Set(); // updates Queue
+import App from "./app";
+import ERRS from "./errors";
 
-const EMPTY_STR = "",
+const appMethods = new App();
+
+let TRASH = new DocumentFragment(),
+  currentCTX = null;
+
+appMethods.updateCallback = () => (TRASH = new DocumentFragment());
+
+const ERR = new Error(),
+  EMPTY_ARR = [],
+  EMPTY_STR = "",
   PRIVATE_KEY = "#Xtends",
   SWITCH_EXP = "Switch",
   CASE_EXP = "Case",
@@ -13,51 +22,89 @@ const IS_INT = Number.isInteger;
 const IS_ARRAY = Array.isArray;
 const caseFiltration = (CN) => IS_ARRAY(CN) && CN[0] === CASE_EXP;
 
-const ERR = new Error(),
-  errOpts = { name: "useForce Hook Rules", message: "" };
-
-let TRASH = new DocumentFragment(),
-  isUpdating = false,
-  currentCTX = null;
-
-CUSTOM_ATTRS.ref = function (el, ctx, attrValue) {
-  ctx.scripts[attrValue] && ctx.scripts[attrValue].call(el, el);
-};
-
-CUSTOM_ATTRS.style = function (el, ctx, attrValue) {
-  const styleObject = ctx.scripts[attrValue];
-  if (styleObject) {
-    Object.assign(el.style, styleObject);
-
-    ctx.observers.push(() => Object.assign(el.style, styleObject));
-  }
-};
-
 function forceUpdate(fn) {
   if (typeof fn !== "function") throw Object.assign(ERR, errOpts);
   const ctx = currentCTX;
   return function () {
     fn();
-    requestUpdate(ctx);
+    appMethods.update(ctx);
   };
 }
 
-function requestUpdate(ctx) {
-  PENDING_UPDATES.delete(ctx);
-  if (ctx.scripts) {
-    ctx.scripts = ctx.initScripts();
-    ctx.observers.forEach((observer) => observer());
-    isUpdating || batchUpdates();
+const CUSTOM_RENDER = {},
+  CUSTOM_ATTRS = {
+    ref(el, ctx, attrValue) {
+      ctx.scripts[attrValue] && ctx.scripts[attrValue].call(el, el);
+    },
+    style(el, ctx, attrValue) {
+      const styleObject = ctx.scripts[attrValue];
+      if (styleObject) {
+        Object.assign(el.style, styleObject);
+
+        ctx.observers.push(() => Object.assign(el.style, styleObject));
+      }
+    },
+  };
+
+CUSTOM_RENDER.Component = function (ctx, vNode) {
+  const [tag, attrs, children] = vNode;
+
+  const jsxRoot = ctx.components[tag],
+    C = new Component(jsxRoot);
+
+  Object.keys(attrs).forEach(handleProp);
+  function handleProp(key) {
+    const value = attrs[key];
+    if (IS_INT(value)) {
+      attrs[key] = ctx.scripts[value];
+      ctx.observers.push(function () {
+        const newVal = ctx.scripts[value];
+        if (attrs[key] === newVal) return;
+        attrs[key] = newVal;
+        PENDING_UPDATES.add(C);
+      });
+    }
   }
-  return ctx;
+
+  return renderElementNode(ctx, jsxRoot.dom);
+};
+CUSTOM_RENDER.SwitchCase = function (ctx, vNode) {};
+CUSTOM_RENDER.Frag = function (ctx, vNode) {};
+
+function renderElementNode(ctx, vNode) {
+  IS_INT(vNode[0]) && (vNode[0] = "Component");
+  vNode[2] ||= EMPTY_ARR;
+
+  const [tag, attrs, children] = vNode;
+
+  if (CUSTOM_RENDER[tag]) return CUSTOM_RENDER[tag](ctx, vNode);
+  else if (tag === LINK_EXP) {
+    vNode[0] = ANCHOR_EXP;
+  }
+
+  const el = document.createElement(tag);
+  for (let i = 0; i < children.length; ) ctx.createNode(children[i++], el);
+  ctx.applyAttributes(attrs, el);
+  return el;
 }
 
-function batchUpdates() {
-  isUpdating = true;
-  PENDING_UPDATES.forEach(requestUpdate);
-  PENDING_UPDATES.clear();
-  TRASH = new DocumentFragment();
-  isUpdating = false;
+function resolveCache(ctx, vNode) {
+  const attrs = vNode[1],
+    key = attrs.key;
+
+  if (!key) return false;
+  delete attrs.key;
+
+  const observerStart = ctx.observers.length - 1;
+  const result = renderElementNode(ctx, vNode);
+  const observerEnd = ctx.observers.length - 1;
+
+  ctx.cacheContainer[key] = {
+    update() {},
+    dom: result,
+  };
+
+  return Element;
 }
 
 function Component(jsxRoot, props) {
@@ -79,118 +126,43 @@ function Component(jsxRoot, props) {
 
 const PROTO = Component.prototype;
 
-PROTO.createElementNode = function createElementNode(vNode) {
-  const [tag, attrs, children] = vNode;
-
-  if (tag === SWITCH_EXP) return renderSwitchCase(this, children);
-  else if (tag === "Frag") return renderFrag();
-  else if (tag === LINK_EXP) {
-    vNode[0] = ANCHOR_EXP;
-  }
-
-  const el = document.createElement(tag);
-  renderChildrenInto(this, children, el);
-  applyAttributes(this, attrs, el);
-  return el;
-};
-
-PROTO.createComponent = function (vNode) {
+PROTO.createNode = function (node, el) {
   const SELF = this,
-    [tag, attrs, children] = vNode;
+    nodeType = node.constructor;
 
-  const jsxRoot = SELF.components[tag],
-    C = new Component(jsxRoot);
+  switch (nodeType) {
+    case String:
+      el.appendChild(document.createTextNode(node));
+      break;
 
-  Object.keys(attrs).forEach(handleProp);
-  function handleProp(key) {
-    const value = attrs[key];
-    if (IS_INT(value)) {
-      attrs[key] = SELF.scripts[value];
+    case Number:
+      const frag = new DOM_FRAG();
+      frag.resolveDynamicContent(SELF.scripts[node]);
+      el.appendChild(frag.frag);
       SELF.observers.push(function () {
-        const newVal = SELF.scripts[value];
-        if (attrs[key] === newVal) return;
-        attrs[key] = newVal;
-        PENDING_UPDATES.add(C);
+        hideFrag(frag, true);
+        frag.resolveDynamicContent(SELF.scripts[node]);
+        expandFrag(frag);
       });
-    }
+      break;
+
+    default:
+      const attrs = node[1];
+
+      Object.assign.apply(attrs, attrs[PRIVATE_KEY]);
+      delete attrs[PRIVATE_KEY];
+
+      const targetMethod = node[1].key ? resolveCache : renderElementNode,
+        resultElement = targetMethod(SELF, node);
+
+      resultElement instanceof DOM_FRAG
+        ? resultElement.appendTo(el)
+        : el.appendChild(resultElement);
   }
-
-  return C.createElementNode(jsxRoot.dom);
 };
 
-PROTO.resolveCache = function (vNode) {
-  const attrs = vNode[1],
-    key = attrs.key;
-
-  if (!key) return false;
-  delete attrs.key;
-
-  const observerStart = this.observers.length - 1;
-  const result = createElementNode(this, vNode);
-  const observerEnd = this.observers.length - 1;
-
-  this.cacheContainer[key] = {
-    update() {},
-    dom: result,
-  };
-
-  return Element;
-};
-
-PROTO.resolveDynamicContent = function (content) {
-  // const SELF = this;
-  // hideFrag(SELF);
-  // if (IS_ARRAY(content)) content.forEach(SELF.resolveDynamicContent, SELF);
-  // else if (typeof content === "object") {
-  //   const ctx = new Component(content);
-  //   ctx.cacheContainer = SELF.cache;
-  //   SELF.append(createElementNode(ctx, content.dom));
-  // } else SELF.placeholder.textContent = content || EMPTY_STR + content;
-};
-
-function renderChildrenInto(ctx, children, el) {
-  children ||= [];
-
-  let index = 0;
-  while (index < children.length) {
-    const node = children[index++],
-      nodeType = node.constructor;
-
-    switch (nodeType) {
-      case String:
-        el.appendChild(document.createTextNode(node));
-        break;
-
-      case Number:
-        const frag = new DOM_FRAG();
-        frag.resolveDynamicContent(ctx.scripts[node]);
-        el.appendChild(frag.frag);
-        ctx.observers.push(function () {
-          hideFrag(frag, true);
-          frag.resolveDynamicContent(ctx.scripts[node]);
-          expandFrag(frag);
-        });
-        break;
-
-      default:
-        const attrs = node[1];
-
-        Object.assign.apply(attrs, attrs[PRIVATE_KEY]);
-        delete attrs[PRIVATE_KEY];
-
-        const targetMethod = IS_INT(node[0])
-            ? renderComponent
-            : createElementNode,
-          resultElement = SELF.resolveCache(node) || targetMethod(ctx, node);
-
-        resultElement instanceof DOM_FRAG
-          ? resultElement.appendTo(el)
-          : el.appendChild(resultElement);
-    }
-  }
-}
-
-function applyAttributes(ctx, attrs, el) {
+PROTO.applyAttributes = function (attrs, el) {
+  const ctx = this;
   Object.keys(attrs).forEach(function (attrName) {
     if (attrName === PRIVATE_KEY) return;
     const attrValue = attrs[attrName];
@@ -207,7 +179,18 @@ function applyAttributes(ctx, attrs, el) {
       el[attrName] = attrValue;
     }
   });
-}
+};
+
+PROTO.resolveDynamicContent = function (content) {
+  // const SELF = this;
+  // hideFrag(SELF);
+  // if (IS_ARRAY(content)) content.forEach(SELF.resolveDynamicContent, SELF);
+  // else if (typeof content === "object") {
+  //   const ctx = new Component(content);
+  //   ctx.cacheContainer = SELF.cache;
+  //   SELF.append(createElementNode(ctx, content.dom));
+  // } else SELF.placeholder.textContent = content || EMPTY_STR + content;
+};
 
 function DOM_FRAG() {
   this.placeholder = document.createTextNode(EMPTY_STR);
