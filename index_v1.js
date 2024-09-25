@@ -152,7 +152,7 @@ PROTO.createNode = function (node, el) {
       Object.assign.apply(attrs, attrs[PRIVATE_KEY]);
       delete attrs[PRIVATE_KEY];
 
-      const targetMethod = node[1].key ? resolveCache : renderElementNode,
+      const targetMethod = attrs.key ? resolveCache : renderElementNode,
         resultElement = targetMethod(SELF, node);
 
       resultElement instanceof DOM_FRAG
