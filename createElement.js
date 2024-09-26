@@ -1,18 +1,16 @@
-const PENDING_UPDATES = new Set();
-const CUSTOM_RENDER = {};
-const EMPTY_ARR = [];
-const LINK_EXP = "Link";
-const CASE_EXP = "Case";
-const ANCHOR_EXP = "a";
 const IS_INT = Number.isInteger;
 const IS_ARRAY = Array.isArray;
+const PENDING_UPDATES = new Set();
+const CUSTOM_RENDER = {};
+const LINK_EXP = "Link";
+const ANCHOR_EXP = "a";
+const CASE_EXP = "Case";
 const caseFiltration = (CN) => IS_ARRAY(CN) && CN[0] === CASE_EXP;
 
 export { PENDING_UPDATES };
 export default createElementNode;
 
 function createElementNode(ctx, vNode) {
-  vNode[2] ||= EMPTY_ARR;
   const [tag, attrs, children] = vNode;
 
   if (attrs.key) return resolveCache(ctx, vNode);
@@ -30,10 +28,11 @@ function createElementNode(ctx, vNode) {
 
 function createComponent(ctx, vNode) {
   const Component = ctx.constructor,
-    [tag, attrs, children] = vNode;
+    [tag, attrs, children] = vNode,
+    jsxRoot = ctx.components[tag];
+  if (jsxRoot.constructor.name === "DOM_FRAG") return jsxRoot;
 
-  const jsxRoot = ctx.components[tag],
-    C = new Component(jsxRoot);
+  const C = new Component(jsxRoot);
 
   Object.keys(attrs).forEach(handleProp);
   function handleProp(key) {

@@ -4,6 +4,7 @@ const TRASH = new DocumentFragment();
 function DOM_FRAG() {
   this.placeholder = document.createTextNode(EMPTY_STR);
   this.frag = document.createDocumentFragment();
+  this.consumed = false;
   this.cache = new Map();
   this.nodes = [];
 }

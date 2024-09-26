@@ -5,6 +5,7 @@ import getError from "./errors";
 const APP = new (function APP() {})();
 const PRIVATE_KEY = "#Xtends";
 const EVENT_EXP = /^on[A-Z]/;
+const EMPTY_ARR = [];
 const CUSTOM_ATTRS = {};
 
 let isUpdating = false,
@@ -66,6 +67,7 @@ PROTO.renderChildNode = function (node, el) {
 
     default:
       const attrs = node[1];
+      node[2] ||= EMPTY_ARR;
 
       Object.assign.apply(attrs, attrs[PRIVATE_KEY]);
       delete attrs[PRIVATE_KEY];
