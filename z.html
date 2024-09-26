@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+  </head>
+  <body>
+    <!-- <script src="./typeCheck.js"></script>
+    <script src="./index.js"></script> -->
+
+    <script src="./index.js"></script>
+    <script>
+      let count = 0;
+
+      const basicComponent = Object.freeze({
+        index: 0,
+        key: null,
+        components: [],
+        scripts: function () {
+          return [count];
+        },
+        dom: ["h1", null, ["count: ", 0]],
+      });
+
+      // debugger;
+      const result = new Component(basicComponent);
+
+      document.body.append(result.DOM);
+
+      count++;
+      result.update();
+    </script>
+  </body>
+</html>

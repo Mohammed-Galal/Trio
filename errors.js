@@ -1,5 +1,8 @@
-const ERRS = {};
+const ERR = new Error();
+const RULES = {};
 
-ERRS.useForce = { name: "useForce Hook Rules", message: "" };
+RULES.useForce = { name: "useForce Hook Rules", message: "" };
 
-export default ERRS;
+export default function (errName) {
+  return Object.assign(ERR, RULES[errName]);
+}
