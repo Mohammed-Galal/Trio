@@ -1,5 +1,5 @@
 import DOM_FRAG from "./fragment";
-import renderElementNode, { appMethods } from "./createElement";
+import createElementNode, { PENDING_UPDATES } from "./createElement";
 import getError from "./errors";
 
 const APP = new (function APP() {})();
@@ -7,12 +7,13 @@ const PRIVATE_KEY = "#Xtends";
 const EVENT_EXP = /^on[A-Z]/;
 const CUSTOM_ATTRS = {};
 
-let currentCTX = null;
+let isUpdating = false,
+  currentCTX = null;
 
 APP.render = function (jsxRoot) {
   if (currentCTX) getError("main");
   const ctx = new Component(jsxRoot);
-  return renderElementNode(ctx, jsxRoot.dom);
+  return createElementNode(ctx, jsxRoot.dom);
 };
 
 APP.useForce = function forceUpdate(fn) {
@@ -20,7 +21,7 @@ APP.useForce = function forceUpdate(fn) {
   const ctx = currentCTX;
   return function () {
     fn();
-    appMethods.update(ctx);
+    requestUpdate(ctx);
   };
 };
 
@@ -69,7 +70,7 @@ PROTO.createNode = function (node, el) {
       Object.assign.apply(attrs, attrs[PRIVATE_KEY]);
       delete attrs[PRIVATE_KEY];
 
-      const resultElement = renderElementNode(SELF, node);
+      const resultElement = createElementNode(SELF, node);
 
       resultElement instanceof DOM_FRAG
         ? resultElement.appendTo(el)
@@ -121,22 +122,19 @@ CUSTOM_ATTRS.style = function (el, ctx, attrValue) {
   }
 };
 
-// if (children) {
-//   const DOMFrag = new DOM_FRAG();
-//   let didRendered = false;
+function requestUpdate(ctx) {
+  PENDING_UPDATES.delete(ctx);
+  if (ctx.scripts) {
+    ctx.scripts = ctx.initScripts();
+    ctx.observers.forEach((observer) => observer());
+    isUpdating || batchUpdates();
+  }
+  return ctx;
+}
 
-//   Object.defineProperty(attrs, "Children", {
-//     get() {
-//       if (!didRendered) {
-//         children.forEach(appendChildNode);
-//         didRendered = true;
-//       }
-//       return DOMFrag;
-//     },
-//   });
-
-//   function appendChildNode(node) {
-//     const childNode = SELF.createNode(node);
-//     DOMFrag.append(childNode);
-//   }
-// }
+function batchUpdates() {
+  isUpdating = true;
+  PENDING_UPDATES.forEach(requestUpdate);
+  PENDING_UPDATES.clear();
+  isUpdating = false;
+}
