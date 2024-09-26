@@ -23,7 +23,7 @@ function createElementNode(ctx, vNode) {
   }
 
   const el = document.createElement(tag);
-  for (let i = 0; i < children.length; ) ctx.createNode(children[i++], el);
+  for (let i = 0; i < children.length; ) ctx.renderChildNode(children[i++], el);
   ctx.applyAttributes(attrs, el);
   return el;
 }

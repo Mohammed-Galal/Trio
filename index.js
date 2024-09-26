@@ -44,7 +44,7 @@ function Component(jsxRoot, props) {
 
 const PROTO = Component.prototype;
 
-PROTO.createNode = function (node, el) {
+PROTO.renderChildNode = function (node, el) {
   const SELF = this,
     nodeType = node.constructor;
 
