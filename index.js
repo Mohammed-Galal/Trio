@@ -2,7 +2,7 @@ import DOM_FRAG from "./fragment";
 import createElementNode, { PENDING_UPDATES } from "./createElement";
 import getError from "./errors";
 
-const APP = new (function APP() {})();
+const VELOX = new (function Velox() {})();
 const PRIVATE_KEY = "#Xtends";
 const EVENT_EXP = /^on[A-Z]/;
 const EMPTY_ARR = [];
@@ -11,13 +11,13 @@ const CUSTOM_ATTRS = {};
 let isUpdating = false,
   currentCTX = null;
 
-APP.render = function (jsxRoot) {
+VELOX.render = function (jsxRoot) {
   if (currentCTX) getError("main");
   const ctx = new Component(jsxRoot);
   return createElementNode(ctx, jsxRoot.dom);
 };
 
-APP.useForce = function forceUpdate(fn) {
+VELOX.useForce = function forceUpdate(fn) {
   if (typeof fn !== "function") throw getError("useForce");
   const ctx = currentCTX;
   return function () {
@@ -26,7 +26,7 @@ APP.useForce = function forceUpdate(fn) {
   };
 };
 
-export default APP;
+export default VELOX;
 
 function Component(jsxRoot, props) {
   if (!(this instanceof Component)) return new Component(jsxRoot, props);
