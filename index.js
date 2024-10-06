@@ -37,6 +37,7 @@ function Component(jsxRoot, props) {
     currentCTX = null;
   }
   this.components = jsxRoot.components;
+  this.props = props;
   if (jsxRoot.scripts) {
     this.initScripts = jsxRoot.scripts;
     this.scripts = this.initScripts();
