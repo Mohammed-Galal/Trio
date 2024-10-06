@@ -1,8 +1,9 @@
 import DOM_FRAG from "./fragment";
-import createElementNode, { PENDING_UPDATES } from "./createElement";
+import renderElementNode, { PENDING_UPDATES } from "./createElement";
 import getError from "./errors";
 
 const VELOX = new (function Velox() {})();
+const isInt = Number.isInteger;
 const PRIVATE_KEY = "#Xtends";
 const EVENT_EXP = /^on[A-Z]/;
 const EMPTY_ARR = [];
@@ -14,7 +15,7 @@ let isUpdating = false,
 VELOX.render = function (jsxRoot) {
   if (currentCTX) getError("main");
   const ctx = new Component(jsxRoot);
-  return createElementNode(ctx, jsxRoot.dom);
+  return renderElementNode(ctx, jsxRoot.dom);
 };
 
 VELOX.useForce = function forceUpdate(fn) {
@@ -45,14 +46,13 @@ function Component(jsxRoot, props) {
 
 const PROTO = Component.prototype;
 
-PROTO.renderChildNode = function (node, el) {
+PROTO.createChildNode = function (node, el) {
   const SELF = this,
     nodeType = node.constructor;
 
   switch (nodeType) {
     case String:
-      el.appendChild(document.createTextNode(node));
-      break;
+      return document.createTextNode(node);
 
     case Number:
       const frag = new DOM_FRAG();
@@ -63,20 +63,16 @@ PROTO.renderChildNode = function (node, el) {
       //   frag.resolveDynamicContent(SELF.scripts[node]);
       //   expandFrag(frag);
       // });
-      break;
+      return frag;
 
     default:
-      const attrs = node[1];
       node[2] ||= EMPTY_ARR;
 
-      Object.assign.apply(attrs, attrs[PRIVATE_KEY]);
-      delete attrs[PRIVATE_KEY];
+      // const attrs = node[1];
+      // Object.assign.apply(attrs, attrs[PRIVATE_KEY]);
+      // delete attrs[PRIVATE_KEY];
 
-      const resultElement = createElementNode(SELF, node);
-
-      resultElement instanceof DOM_FRAG
-        ? resultElement.appendTo(el)
-        : el.appendChild(resultElement);
+      return renderElementNode(SELF, node);
   }
 };
 
@@ -93,26 +89,31 @@ PROTO.resolveDynamicContent = function (content) {
 
 PROTO.applyAttributes = function (attrs, el) {
   const ctx = this;
-  Object.keys(attrs).forEach(function (attrName) {
-    if (attrName === PRIVATE_KEY) return;
+  Object.keys(attrs).forEach(applyAttr);
+  function applyAttr(attrName) {
     const attrValue = attrs[attrName];
+
     if (EVENT_EXP.test(attrName)) {
       const evType = attrName.slice(2).toLowerCase();
       el.addEventListener(evType, function (EV) {
-        const result =
-          ctx.scripts[attrValue] && ctx.scripts[attrValue].call(el, EV);
-        if (result === true) requestUpdate(ctx);
+        ctx.scripts[attrValue].call(el, EV) === true && requestUpdate(ctx);
       });
     } else if (CUSTOM_ATTRS[attrName])
       CUSTOM_ATTRS[attrName](el, ctx, attrValue);
-    else {
-      el[attrName] = attrValue;
-    }
-  });
+    else if (isInt(attrValue)) {
+      let currVal = null;
+      ctx.observers.push(setCurrVal);
+      function setCurrVal() {
+        if (currVal === ctx.scripts[attrValue]) return;
+        currVal = ctx.scripts[attrValue];
+        el[attrName] = currVal;
+      }
+    } else el[attrName] = attrValue;
+  }
 };
 
 CUSTOM_ATTRS.ref = function (el, ctx, attrValue) {
-  ctx.scripts[attrValue] && ctx.scripts[attrValue].call(el, el);
+  ctx.scripts[attrValue].call(el, el);
 };
 
 CUSTOM_ATTRS.style = function (el, ctx, attrValue) {

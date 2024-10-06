@@ -1,5 +1,8 @@
+import DOM_FRAG from "./fragment";
+
 const IS_INT = Number.isInteger;
 const IS_ARRAY = Array.isArray;
+const defineProp = Object.defineProperty;
 const PENDING_UPDATES = new Set();
 const CUSTOM_RENDER = {};
 const LINK_EXP = "Link";
@@ -8,47 +11,75 @@ const CASE_EXP = "Case";
 const caseFiltration = (CN) => IS_ARRAY(CN) && CN[0] === CASE_EXP;
 
 export { PENDING_UPDATES };
-export default createElementNode;
+export default renderElementNode;
 
-function createElementNode(ctx, vNode) {
+function renderElementNode(ctx, vNode) {
   const [tag, attrs, children] = vNode;
 
   if (attrs.key) return resolveCache(ctx, vNode);
-  else if (IS_INT(tag)) return createComponent(ctx, vNode);
+  else if (IS_INT(tag)) return renderComponent(ctx, vNode);
   else if (CUSTOM_RENDER[tag]) return CUSTOM_RENDER[tag](ctx, vNode);
   else if (tag === LINK_EXP) {
     vNode[0] = ANCHOR_EXP;
   }
 
   const el = document.createElement(tag);
-  for (let i = 0; i < children.length; ) ctx.renderChildNode(children[i++], el);
+
+  for (let i = 0; i < children.length; ) {
+    const childNode = ctx.createChildNode(children[i++]);
+    childNode.constructor.name === "DOM_FRAG"
+      ? childNode.appendTo(el)
+      : el.appendChild(childNode);
+  }
+
   ctx.applyAttributes(attrs, el);
   return el;
 }
 
-function createComponent(ctx, vNode) {
-  const Component = ctx.constructor,
+function renderComponent(ctx, vNode) {
+  const Component_Construct = ctx.constructor,
     [tag, attrs, children] = vNode,
     jsxRoot = ctx.components[tag];
-  if (jsxRoot.constructor.name === "DOM_FRAG") return jsxRoot;
 
-  const C = new Component(jsxRoot);
+  if (jsxRoot === ctx.props.children) return ctx.Children;
 
-  Object.keys(attrs).forEach(handleProp);
+  const keys = Object.keys(attrs),
+    props = {};
+
+  let C,
+    index = 0;
+
+  while (index < keys.length) handleProp(keys[index++]);
+
+  C = new Component_Construct(jsxRoot, props);
+
+  if (children.length) {
+    const childrenContainer = new DOM_FRAG();
+    index = 0;
+    while (index < children.length)
+      childrenContainer.insertNode(ctx.createChildNode(children[index++]));
+    defineProp(C, "Children", {
+      configurable: false,
+      enumerable: false,
+      writable: false,
+      value: childrenContainer,
+    });
+  }
+
+  return renderElementNode(C, jsxRoot.dom);
+
   function handleProp(key) {
     const value = attrs[key];
     if (IS_INT(value)) {
-      attrs[key] = ctx.scripts[value];
+      props[key] = ctx.scripts[value];
       ctx.observers.push(function () {
         const newVal = ctx.scripts[value];
-        if (attrs[key] === newVal) return;
-        attrs[key] = newVal;
+        if (props[key] === newVal) return;
+        props[key] = newVal;
         PENDING_UPDATES.add(C);
       });
-    }
+    } else props[key] = value;
   }
-
-  return createElementNode(ctx, jsxRoot.dom);
 }
 
 function resolveCache(ctx, vNode) {
@@ -59,7 +90,7 @@ function resolveCache(ctx, vNode) {
   delete attrs.key;
 
   const observerStart = ctx.observers.length - 1;
-  const result = createElementNode(ctx, vNode);
+  const result = renderElementNode(ctx, vNode);
   const observerEnd = ctx.observers.length - 1;
 
   ctx.cacheContainer[key] = {
@@ -72,7 +103,7 @@ function resolveCache(ctx, vNode) {
 
 CUSTOM_RENDER.Frag = function (ctx, vNode) {};
 
-CUSTOM_RENDER.SwitchCase = function (ctx, vNode) {};
+CUSTOM_RENDER.Switch = function (ctx, vNode) {};
 
 // if (children) {
 //   const DOMFrag = new DOM_FRAG();

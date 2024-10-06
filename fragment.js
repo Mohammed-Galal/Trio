@@ -30,6 +30,7 @@ PROTO.hide = function (clear) {
   const nodes = this.nodes,
     targetFrag = clear ? TRASH : frag.frag;
   for (let i = 0; i < nodes.length; ) targetFrag.appendChild(nodes[i++]);
+  this.consumed = false;
 };
 
 PROTO.show = function () {
@@ -41,4 +42,5 @@ PROTO.show = function () {
   currDOM.length = childNodes.length;
 
   parent.insertBefore(this.frag, this.placeholder);
+  this.consumed = true;
 };
