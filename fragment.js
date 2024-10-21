@@ -26,10 +26,10 @@ PROTO.appendTo = function (containerNode) {
   containerNode.appendChild(this.placeholder);
 };
 
-PROTO.hide = function () {
+PROTO.clear = function () {
   /** Capturing checkpoint before clear proccess.
    * Object.assign([], domFrag.nodes)
-   * domFrag.hide()
+   * domFrag.clear()
    */
   const nodes = this.nodes;
   for (let i = 0; i < nodes.length; ) TRASH.appendChild(nodes[i++]);
