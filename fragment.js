@@ -26,10 +26,13 @@ PROTO.appendTo = function (containerNode) {
   containerNode.appendChild(this.placeholder);
 };
 
-PROTO.hide = function (clear) {
-  const nodes = this.nodes,
-    targetFrag = clear ? TRASH : frag.frag;
-  for (let i = 0; i < nodes.length; ) targetFrag.appendChild(nodes[i++]);
+PROTO.hide = function () {
+  /** Capturing checkpoint to restore later.
+   * Object.assign([], domFrag.nodes)
+   * domFrag.hide()
+   */
+  const nodes = this.nodes;
+  for (let i = 0; i < nodes.length; ) TRASH.appendChild(nodes[i++]);
   this.consumed = false;
 };
 
