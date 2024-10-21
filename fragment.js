@@ -27,7 +27,7 @@ PROTO.appendTo = function (containerNode) {
 };
 
 PROTO.hide = function () {
-  /** Capturing checkpoint to restore later.
+  /** Capturing checkpoint before clear proccess.
    * Object.assign([], domFrag.nodes)
    * domFrag.hide()
    */
