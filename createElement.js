@@ -1,5 +1,6 @@
 import DOM_FRAG from "./fragment";
 
+const VELOX = new (function Velox() {})();
 const IS_INT = Number.isInteger;
 const IS_ARRAY = Array.isArray;
 const defineProp = Object.defineProperty;
@@ -10,8 +11,25 @@ const ANCHOR_EXP = "a";
 const CASE_EXP = "Case";
 const caseFiltration = (CN) => IS_ARRAY(CN) && CN[0] === CASE_EXP;
 
-export { PENDING_UPDATES };
-export default renderElementNode;
+let isUpdating = false,
+  currentCTX = null;
+
+VELOX.render = function (jsxRoot) {
+  if (currentCTX) getError("main");
+  const ctx = new Component(jsxRoot);
+  return renderElementNode(ctx, jsxRoot.dom);
+};
+
+VELOX.useForce = function forceUpdate(fn) {
+  if (typeof fn !== "function") throw getError("useForce");
+  const ctx = currentCTX;
+  return function () {
+    fn();
+    requestUpdate(ctx);
+  };
+};
+
+export default VELOX;
 
 function renderElementNode(ctx, vNode) {
   const [tag, attrs, children] = vNode;
@@ -37,49 +55,59 @@ function renderElementNode(ctx, vNode) {
 }
 
 function renderComponent(ctx, vNode) {
-  const Component_Construct = ctx.constructor,
-    [tag, attrs, children] = vNode,
-    jsxRoot = ctx.components[tag];
+  const [tag, attrs, children] = vNode;
 
-  if (jsxRoot === ctx.props.children) return ctx.Children;
-
-  const keys = Object.keys(attrs),
-    props = {};
+  let jsxRoot = ctx.components[tag];
+  if (jsxRoot === ctx.childrenRef) return ctx.Children;
 
   let C,
-    index = 0;
+    Children = null;
 
-  while (index < keys.length) handleProp(keys[index++]);
+  if (jsxRoot.constructor.name === "Function") {
+    const keys = Object.keys(attrs),
+      props = {};
 
-  C = new Component_Construct(jsxRoot, props);
-
-  if (children.length) {
-    const childrenContainer = new DOM_FRAG();
-    index = 0;
-    while (index < children.length)
-      childrenContainer.insertNode(ctx.createChildNode(children[index++]));
-    defineProp(C, "Children", {
+    defineProp(props, "Children", {
       configurable: false,
       enumerable: false,
       writable: false,
-      value: childrenContainer,
+      value: children,
     });
+
+    let index = 0;
+    while (index < keys.length) handleProp(keys[index++]);
+
+    currentCTX = { effects: [] };
+    jsxRoot = jsxRoot(props);
+
+    if (children.length) {
+      Children = new DOM_FRAG();
+      index = 0;
+      while (index < children.length)
+        Children.insertNode(ctx.createChildNode(children[index++]));
+    }
+
+    function handleProp(key) {
+      const value = attrs[key];
+      if (IS_INT(value)) {
+        props[key] = ctx.scripts[value];
+        ctx.observers.push(function () {
+          const newVal = ctx.scripts[value];
+          if (props[key] === newVal) return;
+          props[key] = newVal;
+          PENDING_UPDATES.add(C);
+        });
+      } else props[key] = value;
+    }
   }
+
+  C = new Component(jsxRoot);
+  C.hooks = currentCTX;
+  currentCTX = null;
+  C.childrenRef = children;
+  C.Children = Children;
 
   return renderElementNode(C, jsxRoot.dom);
-
-  function handleProp(key) {
-    const value = attrs[key];
-    if (IS_INT(value)) {
-      props[key] = ctx.scripts[value];
-      ctx.observers.push(function () {
-        const newVal = ctx.scripts[value];
-        if (props[key] === newVal) return;
-        props[key] = newVal;
-        PENDING_UPDATES.add(C);
-      });
-    } else props[key] = value;
-  }
 }
 
 function resolveCache(ctx, vNode) {

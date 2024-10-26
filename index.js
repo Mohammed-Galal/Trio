@@ -2,40 +2,14 @@ import DOM_FRAG from "./fragment";
 import renderElementNode, { PENDING_UPDATES } from "./createElement";
 import getError from "./errors";
 
-const VELOX = new (function Velox() {})();
 const isInt = Number.isInteger;
 const PRIVATE_KEY = "#Xtends";
 const EVENT_EXP = /^on[A-Z]/;
 const EMPTY_ARR = [];
 const CUSTOM_ATTRS = {};
 
-let isUpdating = false,
-  currentCTX = null;
-
-VELOX.render = function (jsxRoot) {
-  if (currentCTX) getError("main");
-  const ctx = new Component(jsxRoot);
-  return renderElementNode(ctx, jsxRoot.dom);
-};
-
-VELOX.useForce = function forceUpdate(fn) {
-  if (typeof fn !== "function") throw getError("useForce");
-  const ctx = currentCTX;
-  return function () {
-    fn();
-    requestUpdate(ctx);
-  };
-};
-
-export default VELOX;
-
 function Component(jsxRoot, props) {
   if (!(this instanceof Component)) return new Component(jsxRoot, props);
-  else if (typeof jsxRoot === "function") {
-    currentCTX = this;
-    jsxRoot = jsxRoot(props);
-    currentCTX = null;
-  }
   this.components = jsxRoot.components;
   this.props = props;
   if (jsxRoot.scripts) {
