@@ -60,14 +60,25 @@ function renderComponent(ctx, vNode) {
   let jsxRoot = ctx.components[tag];
   // if it's Children
   if (jsxRoot.constructor === DocumentFragment) return jsxRoot;
-
-  if (jsxRoot.constructor.name === "Function") {
+  else if (jsxRoot.constructor.name === "Function") {
     const keys = Object.keys(attrs),
       CTX = { effects: [] },
       props = {};
 
     let index = 0;
-    while (index < keys.length) handleProp(keys[index++]);
+    while (index < keys.length) {
+      const key = keys[index++],
+        value = attrs[key];
+      if (IS_INT(value)) {
+        props[key] = ctx.scripts[value];
+        ctx.observers.push(function () {
+          const newVal = ctx.scripts[value];
+          if (props[key] === newVal) return;
+          props[key] = newVal;
+          PENDING_UPDATES.add(CTX);
+        });
+      } else props[key] = value;
+    };
 
     currentCTX = CTX;
     jsxRoot = jsxRoot(props);
@@ -88,19 +99,6 @@ function renderComponent(ctx, vNode) {
           return Children.frag;
         },
       });
-    }
-
-    function handleProp(key) {
-      const value = attrs[key];
-      if (IS_INT(value)) {
-        props[key] = ctx.scripts[value];
-        ctx.observers.push(function () {
-          const newVal = ctx.scripts[value];
-          if (props[key] === newVal) return;
-          props[key] = newVal;
-          PENDING_UPDATES.add(CTX);
-        });
-      } else props[key] = value;
     }
   }
 
