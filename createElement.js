@@ -103,7 +103,7 @@ function renderComponent(ctx, vNode) {
   }
 
   const C = new Component(jsxRoot);
-  C.hooks = currentCTX;
+  currentCTX && (currentCTX.ctx = C);
   currentCTX = null;
 
   return renderElementNode(C, jsxRoot.dom);
