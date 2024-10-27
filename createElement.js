@@ -58,33 +58,36 @@ function renderComponent(ctx, vNode) {
   const [tag, attrs, children] = vNode;
 
   let jsxRoot = ctx.components[tag];
-  if (jsxRoot === ctx.childrenRef) return ctx.Children;
-
-  let C,
-    Children = null;
+  // if it's Children
+  if (jsxRoot.constructor === DocumentFragment) return jsxRoot;
 
   if (jsxRoot.constructor.name === "Function") {
     const keys = Object.keys(attrs),
+      CTX = { effects: [] },
       props = {};
-
-    defineProp(props, "Children", {
-      configurable: false,
-      enumerable: false,
-      writable: false,
-      value: children,
-    });
 
     let index = 0;
     while (index < keys.length) handleProp(keys[index++]);
 
-    currentCTX = { effects: [] };
+    currentCTX = CTX;
     jsxRoot = jsxRoot(props);
 
     if (children.length) {
-      Children = new DOM_FRAG();
+      const Children = new DOM_FRAG();
+
       index = 0;
       while (index < children.length)
         Children.insertNode(ctx.createChildNode(children[index++]));
+
+      defineProp(props, "Children", {
+        configurable: false,
+        enumerable: false,
+        writable: false,
+        get() {
+          // Children.reset()
+          return Children.frag;
+        },
+      });
     }
 
     function handleProp(key) {
@@ -95,17 +98,15 @@ function renderComponent(ctx, vNode) {
           const newVal = ctx.scripts[value];
           if (props[key] === newVal) return;
           props[key] = newVal;
-          PENDING_UPDATES.add(C);
+          PENDING_UPDATES.add(CTX);
         });
       } else props[key] = value;
     }
   }
 
-  C = new Component(jsxRoot);
+  const C = new Component(jsxRoot);
   C.hooks = currentCTX;
   currentCTX = null;
-  C.childrenRef = children;
-  C.Children = Children;
 
   return renderElementNode(C, jsxRoot.dom);
 }
