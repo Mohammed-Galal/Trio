@@ -32,16 +32,19 @@ VELOX.useForce = function forceUpdate(fn) {
 export default VELOX;
 
 function renderElementNode(ctx, vNode) {
-  const [tag, attrs, children] = vNode;
+  const [tag, props, children] = vNode;
 
-  if (attrs.key) return resolveCache(ctx, vNode);
+  if (props.key) return resolveCache(ctx, vNode);
   else if (IS_INT(tag)) return renderComponent(ctx, vNode);
   else if (CUSTOM_RENDER[tag]) return CUSTOM_RENDER[tag](ctx, vNode);
   else if (tag === LINK_EXP) {
     vNode[0] = ANCHOR_EXP;
   }
 
-  const el = document.createElement(tag);
+  const el = document.createElement(tag),
+    attrs = {};
+
+  // ctx.applyAttributes(compareProps(props, attrs), el);
 
   for (let i = 0; i < children.length; ) {
     const childNode = ctx.createChildNode(children[i++]);
@@ -50,7 +53,6 @@ function renderElementNode(ctx, vNode) {
       : el.appendChild(childNode);
   }
 
-  ctx.applyAttributes(attrs, el);
   return el;
 }
 
@@ -78,7 +80,7 @@ function renderComponent(ctx, vNode) {
           PENDING_UPDATES.add(CTX);
         });
       } else props[key] = value;
-    };
+    }
 
     currentCTX = CTX;
     jsxRoot = jsxRoot(props);
