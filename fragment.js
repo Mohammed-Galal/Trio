@@ -4,7 +4,7 @@ const TRASH = new DocumentFragment();
 function DOM_FRAG() {
   this.placeholder = document.createTextNode(EMPTY_STR);
   this.frag = document.createDocumentFragment();
-  /** nodes can only store [HTMLElement, DOM_Frag] */
+  /** nodes can only store [HTMLElement, TextNode, DOM_Frag] */
   this.nodes = [];
 }
 
