@@ -1,6 +1,7 @@
 import DOM_FRAG from "./fragment";
 
 const VELOX = new (function Velox() {})();
+const CHILDREN_CONTAINERS = new WeakMap(); /* Symbol: DOM_Frag  */
 const IS_INT = Number.isInteger;
 const IS_ARRAY = Array.isArray;
 const defineProp = Object.defineProperty;
@@ -199,3 +200,10 @@ function renderSwitchCase(ctx, children) {
   }
 }
  */
+
+function ChildrenContainer(S, M) {
+  if (this.constructor !== ChildrenContainer)
+    return new ChildrenContainer(S, M);
+  this.symbol = S;
+  this.map = M;
+}
