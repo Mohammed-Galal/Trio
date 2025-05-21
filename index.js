@@ -16,6 +16,19 @@ const Effects = {
 const ERR = {
   C: ["Component is not defined", "Component is not a function"],
   S: ["Script is not defined", "Script is not a function"],
+  E: ["Entry must have a key and JSX Component", "Entry key must be a String", "Entry component must be a JSX Component"],
+  M: ["MyLib must have a component, childrenAsProp, updateComponent"],
+  D: ["DocFrag must be a new instance"],
+  F: ["Fragment must be a new instance"],
+  L: ["Layout Effects must be a function"],
+  E: ["Effects must be a function"],
+  R: ["Children Data must be a function"],
+  P: ["Prop Change Callback must be a function"],
+  C: ["Component must be a new instance"],
+  I: ["Component must have a scripts property"],
+  O: ["Component must have a components property"],
+  V: ["Component must have a cachedComponents property"],
+  U: ["Component must have a updateComponent property"],
 };
 
 let isUpdating = false;
@@ -32,133 +45,34 @@ PROTO.getScript = function (index) {
   return this.scripts[index];
 };
 
-PROTO.render = function (JSXNode) {
-  const ctx = this;
-  if (JSXNode.constructor !== Array) return createJSXNode(JSXNode, ctx);
-
-  // check if Element has key
-  return (IS_INT(JSXNode[0]) ? renderComponent : createElement)(JSXNode, ctx);
-};
-
-PROTO.retrieveComponent = function (c) {
-  if (c && c.constructor !== Object) throw ERR.C[0];
-
-  const ctx = this,
-    DOMProps = c.dom[1];
-
-  if (DOMProps && DOMProps.hasOwnProperty("key")) {
-    const key = IS_INT(DOMProps.key)
-      ? ctx.getScript(DOMProps.key)
-      : DOMProps.key;
-
-    if (!ctx.cachedComponents.has(key)) {
-      const newCtx = new Component(c),
-        registeredComponent = {};
-      ctx.cachedComponents.set(key, registeredComponent);
-      registeredComponent.observers = newCtx.observers;
-      registeredComponent.DOM = createJSXNode(c.dom, newCtx);
-    }
-
-    const targetCtx = ctx.cachedComponents.get(key);
-    targetCtx.observers.forEach((o) => o());
-    return targetCtx.DOM;
-  }
-
-  const newCtx = new Component(c);
-  return createJSXNode(c.dom, newCtx);
-};
-
-function createJSXNode(node, ctx) {
-  if (node === undefined) throw ERR.C[0];
-
-  switch (node.constructor) {
-    case String:
-      return document.createTextNode(node);
-
-    case Array:
-      const tag = node[0],
-        isComponent = tag.constructor === Number;
-
-      let targerMethod = "renderElement";
-      if (isComponent) {
-        node[0] = ctx.components[tag];
-        targerMethod = "handleChildComponent";
-      }
-
-      return ctx[targerMethod](node);
-
-    default:
-      const frag = new DocFrag();
-      // handle dynamic Content [String - False - Array - Null - Number]
-      return frag;
-  }
-}
-
-function createElement([tag, props, children], ctx) {
-  const el = document.createElement(tag),
-    registeredEvents = {};
-
-  ctx.observers.push(initProps(props, ctx, changedPropsCallback));
-
-  children &&
-    children.forEach((child) => {
-      const childNode = createJSXNode(child);
-      if (childNode.constructor !== DocFrag) return el.appendChild(childNode);
-      // dom frag handler
-    });
-
-  return el;
-
-  function changedPropsCallback(newProps, changedProps) {
-    changedProps.forEach((k) => applyProp(k, newProps[k]));
-  }
-
-  function applyProp(name, value) {
-    if (value === undefined) return;
-
-    if (EventExp.test(name)) {
-      const isRegistered = registeredEvents.hasOwnProperty(name);
-      value.constructor === Function && (registeredEvents[name] = value);
-      if (isRegistered) return;
-      const evType = name.slice(2).toLowerCase();
-      el.addEventListener(evType, (ev) =>
-        registeredEvents[name].call(el, ev, name)
-      );
-    }
-    // ========
-    else if (CustomAttrs.hasOwnProperty(name)) CustomAttrs[name](el, name, val);
-    else if (value.constructor === Object) ASSIGN_OBJ(el[name], value);
-    else if (el.hasOwnProperty(name)) el[name] = value;
-    else el.setAttribute(name, value);
-  }
-}
-
 function renderComponent([index, props, children], ctx) {
   const component = ctx.components[index];
 
   if (component.constructor === Object)
-    return createJSXNode(component.dom, new Component(component));
+    return new Component(component).renderEntry(component.dom);
 
-  const childrenAsProp = new ChildrenData();
-  if (children) {
-    const childrenRef = Symbol("childrenRef"),
-      childrenData = { children, ctx };
-    childrenAsProp.ref = childrenRef;
-    childrenAsProp.use = function (fn) {
-      // check if fn is a function, otherwise throw Error
-      childrenData.use ||= fn;
-    };
-    ChildrenContainer.set(childrenRef, childrenData);
-  }
-  Object.freeze(childrenAsProp);
+  // const childrenAsProp = new ChildrenData();
+  // if (children) {
+  //   const childrenRef = Symbol("childrenRef"),
+  //     childrenData = { children, ctx };
+  //   childrenAsProp.ref = childrenRef;
+  //   childrenAsProp.use = function (fn) {
+  //     // check if fn is a function, otherwise throw Error
+  //     childrenData.use ||= fn;
+  //   };
+  //   ChildrenContainer.set(childrenRef, childrenData);
+  // }
+  // Object.freeze(childrenAsProp);
 
   const docFrag = new DocFrag(),
-    unNamed_2 = new MyLib(component, childrenAsProp, updateComponent),
-    initializerFN = props ? initProps(props, ctx, pendUpdate) : pendUpdate;
+    unNamed_2 = new MyLib(component, childrenAsProp, updateComponent);
 
-  // =>>  we pass the props to unNamed_2.call method <<= //
   let currentActiveKey;
-  const cachedComponents = new Map();
+
+  // =>>  we pass the props to unNamed_2.call method
+  // =>>  unNamed_2.call() => run LayouEffects => updateComponent => Effects
+  const initializerFN = props ? initProps(props, ctx, pendUpdate) : pendUpdate,
+    cachedComponents = new Map();
 
   initializerFN();
   return docFrag;
@@ -170,8 +84,6 @@ function renderComponent([index, props, children], ctx) {
   }
 
   function updateComponent(resultComponent) {
-    unNamed_2.run("layoutEffects");
-
     switch (resultComponent && resultComponent.constructor) {
       case Object:
         const key = resultComponent.key;
@@ -206,11 +118,94 @@ function renderComponent([index, props, children], ctx) {
       default:
         docFrag.replaceChildren(EmpyStr + (resultComponent || EmpyStr));
     }
-
-    unNamed_2.run("effects");
   }
 }
 
+// JSXElement: Array
+// PROTO.createJSXNode = function (JSXNode) {
+//   if (JSXRoot.constructor === Object) renderComponent(JSXNode);
+
+//     ; {
+//     case Object:
+//       // check if Element has key
+//       return (IS_INT(JSXRoot[0]) ? renderComponent : createElement)(
+//         JSXRoot,
+//         ctx
+//       );
+
+//     case Number:
+//       const frag = new DocFrag();
+//       // handle dynamic Content [String - False - Array - Null - Number]
+//       return createJSXNode(JSXRoot, ctx);
+
+//     default:
+//       return document.createTextNode(EmpyStr + JSXRoot);
+//   }
+// };
+
+function createJSXNode(node, ctx) {
+  if (node === undefined) throw ERR.C[0];
+
+  switch (node.constructor) {
+    case Object:
+
+    case Array:
+      const tag = node[0],
+        isComponent = tag.constructor === Number;
+
+      let targerMethod = "renderElement";
+      if (isComponent) {
+        node[0] = ctx.components[tag];
+        targerMethod = "handleChildComponent";
+      }
+
+      return ctx[targerMethod](node);
+
+    default:
+      return frag;
+  }
+}
+
+function createElement([tag, props, children], ctx) {
+  const el = document.createElement(tag),
+    registeredEvents = {};
+
+  ctx.observers.push(initProps(props, ctx, changedPropsCallback));
+
+  children &&
+    children.forEach((child) => {
+      const childNode = createJSXNode(child);
+      if (childNode.constructor !== DocFrag) return el.appendChild(childNode);
+      // dom frag handler
+    });
+
+  return el;
+
+  function changedPropsCallback(newProps, changedProps) {
+    changedProps.forEach((k) => applyProp(k, newProps[k]));
+  }
+
+  function applyProp(name, value) {
+    if (value === undefined) return;
+
+    if (EventExp.test(name)) {
+      if (value.constructor !== Function) return;
+      registeredEvents[name] = value;
+      if (registeredEvents.hasOwnProperty(name)) return;
+      const evType = name.slice(2).toLowerCase();
+      el.addEventListener(evType, (ev) =>
+        registeredEvents[name].call(el, ev, name)
+      );
+    }
+    // ========
+    else if (CustomAttrs.hasOwnProperty(name)) CustomAttrs[name](el, name, val);
+    else if (value.constructor === Object) ASSIGN_OBJ(el[name], value);
+    else if (el.hasOwnProperty(name)) el[name] = value;
+    else el.setAttribute(name, value);
+  }
+}
+
+// initProps: [Object, Component, Callback Function]
 function initProps(props, ctx, propChangeCallback) {
   const hasSpreadedProps = props.assign.length > 0,
     inlineProps = props.inline,
@@ -257,9 +252,133 @@ function initProps(props, ctx, propChangeCallback) {
   }
 }
 
+function ChildrenData() { }
+
 function DocFrag() {
   if (this.constructor !== DocFrag) return new DocFrag();
   this.placeholder = document.createTextNode("");
+  this.frag = document.createDocumentFragment();
+  this.snapshot = [];
+  this.cache = new Map();
 }
 
-function ChildrenData() {}
+DocFrag.prototype.appendTo = function (parent) {
+  if (parent.constructor === DocFrag) return parent.appendTo(parent);
+  const self = this;
+  parent.appendChild(self.placeholder);
+  Object.assign(self.frag.childNodes, self.snapshot);
+  parent.insertBefore(self.frag, self.placeholder);
+  self.snapshot.length = 0;
+}
+
+DocFrag.prototype.insertNode = function (node) {
+  const self = this;
+  if (node.constructor === Array) node.forEach(self.insertNode, self);
+  else if (node.constructor !== DocFrag) self.appendChild(node);
+  else self.appendChild(node);
+};
+
+DocFrag.prototype.clear = function () {
+  const self = this;
+  self.placeholder.textContent = "";
+  self.snapshot.forEach(node => node.remove());
+  self.snapshot.length = 0;
+};
+
+DocFrag.prototype.replaceChildren = function (node) {
+  const self = this;
+  self.clear();
+  self.insertNode(node);
+};
+
+
+// JSXRoot :Array? [Object, Number, false, null, undefined, String + otherDataType?]
+DocFrag.prototype.render = function (JSXRoot) {
+  const container = this;
+
+  switch (JSXRoot.constructor) {
+    // Array may contains various Data Types
+    case Array:
+      JSXRoot.map(container.render);
+      break;
+
+    // handle JSX Components
+    case Object:
+      const cache = container.cache,
+        key = JSXRoot.key;
+
+      if (!cache.has(key)) {
+        const ctx = new Component(JSXRoot);
+        cache.set(key, {
+          DOM: createJSXNode(JSXRoot.dom, JSXRoot),
+          observers: ctx.observers,
+        });
+      } else {
+        const cachedComponent = cache.get(key);
+        cachedComponent.observers.forEach(fn => fn());
+      }
+
+      return cache.get(key).DOM;
+
+    // Entry: [key, component]
+    case Entry: {
+      const cache = container.cache,
+        key = JSXRoot.key;
+
+      if (!cache.has(key)) {
+        const ctx = new Component(JSXRoot.value);
+        cache.set(key, {
+          DOM: createJSXNode(JSXRoot.dom, JSXRoot),
+          observers: ctx.observers,
+        });
+      }
+
+      return cache.get(key).DOM;
+    }
+
+    // handle Integers
+    case Number:
+      return EmpyStr + JSXRoot;
+
+    // other Data Types (e.g Boolean, Symbol, Function, Null, undefined, ...etc)
+    default:
+      return EmpyStr + (JSXRoot || EmpyStr);
+  }
+};
+
+// Entry: [key, component]
+function Entry(key, component) {
+  if (this.constructor !== Entry) return new Entry(key, component);
+  else if (key === undefined || component === undefined) throw new Error("Entry must have a key and JSX Component");
+  else if (key.constructor !== String) throw new Error("Entry key must be a String");
+  else if (component.constructor !== Object) throw new Error("Entry component must be a JSX Component");
+
+  this.key = key;
+  this.value = component;
+}
+
+// MyLib: [Object, ChildrenData, Function]
+function MyLib(component, childrenAsProp, updateComponent) {
+  this.component = component;
+  this.childrenAsProp = childrenAsProp;
+  this.updateComponent = updateComponent;
+}
+
+MyLib.prototype.call = function (props) {
+  this.component.renderEntry(props);
+}
+
+MyLib.prototype.handleChildComponent = function (node) {
+  const self = this;
+  const children = node[2];
+  if (children) {
+    const childrenRef = Symbol("childrenRef"),
+      childrenData = { children, ctx };
+    self.childrenAsProp.ref = childrenRef;
+    self.childrenAsProp.use = function (fn) {
+      if (typeof fn !== "function") throw new Error("Children Data must be a function");
+      childrenData.use = fn;
+    };
+    ChildrenContainer.set(childrenRef, childrenData);
+  }
+}
