@@ -45,124 +45,26 @@ PROTO.getScript = function (index) {
   return this.scripts[index];
 };
 
-function renderComponent([index, props, children], ctx) {
-  const component = ctx.components[index];
-
-  if (component.constructor === Object)
-    return new Component(component).renderEntry(component.dom);
-
-  // const childrenAsProp = new ChildrenData();
-  // if (children) {
-  //   const childrenRef = Symbol("childrenRef"),
-  //     childrenData = { children, ctx };
-  //   childrenAsProp.ref = childrenRef;
-  //   childrenAsProp.use = function (fn) {
-  //     // check if fn is a function, otherwise throw Error
-  //     childrenData.use ||= fn;
-  //   };
-  //   ChildrenContainer.set(childrenRef, childrenData);
-  // }
-  // Object.freeze(childrenAsProp);
-
-  const docFrag = new DocFrag(),
-    unNamed_2 = new MyLib(component, childrenAsProp, updateComponent);
-
-  let currentActiveKey;
-
-  // =>>  we pass the props to unNamed_2.call method
-  // =>>  unNamed_2.call() => run LayouEffects => updateComponent => Effects
-  const initializerFN = props ? initProps(props, ctx, pendUpdate) : pendUpdate,
-    cachedComponents = new Map();
-
-  initializerFN();
-  return docFrag;
-
-  function pendUpdate(props) {
-    isUpdating
-      ? PendingUpdates.add(() => unNamed_2.call(props))
-      : unNamed_2.call(props);
-  }
-
-  function updateComponent(resultComponent) {
-    switch (resultComponent && resultComponent.constructor) {
-      case Object:
-        const key = resultComponent.key;
-        let newComponent;
-        if (currentActiveKey !== key) {
-          if (!cachedComponents.has(key)) {
-            newComponent = new Component(resultComponent);
-            const cache = {
-              observers: newComponent.observers,
-              DOM: createJSXNode(resultComponent.dom, newComponent),
-            };
-            cachedComponents.set(k, cache);
-          }
-          newComponent = cachedComponents.get(key);
-          docFrag.replaceChildren(newComponent.DOM);
-        }
-        newComponent.observers.forEach((fn) => fn());
-        currentActiveKey = key;
-        break;
-
-      case Array:
-        docFrag.clear();
-        resultComponent.forEach(iteratorHandler);
-        function iteratorHandler(c) {
-          docFrag.insertNode(ctx.retrieveComponent(c));
-        }
-        break;
-
-      case Number:
-        resultComponent = EmpyStr + resultComponent;
-
-      default:
-        docFrag.replaceChildren(EmpyStr + (resultComponent || EmpyStr));
-    }
-  }
-}
-
-// JSXElement: Array
-// PROTO.createJSXNode = function (JSXNode) {
-//   if (JSXRoot.constructor === Object) renderComponent(JSXNode);
-
-//     ; {
-//     case Object:
-//       // check if Element has key
-//       return (IS_INT(JSXRoot[0]) ? renderComponent : createElement)(
-//         JSXRoot,
-//         ctx
-//       );
-
-//     case Number:
-//       const frag = new DocFrag();
-//       // handle dynamic Content [String - False - Array - Null - Number]
-//       return createJSXNode(JSXRoot, ctx);
-
-//     default:
-//       return document.createTextNode(EmpyStr + JSXRoot);
-//   }
-// };
-
 function createJSXNode(node, ctx) {
   if (node === undefined) throw ERR.C[0];
-
   switch (node.constructor) {
-    case Object:
-
     case Array:
       const tag = node[0],
         isComponent = tag.constructor === Number;
-
-      let targerMethod = "renderElement";
+      let targetMethod = createElement;
       if (isComponent) {
         node[0] = ctx.components[tag];
-        targerMethod = "handleChildComponent";
+        targetMethod = renderComponent;
       }
+      return targetMethod(node, ctx);
 
-      return ctx[targerMethod](node);
+    case Number:
+      const frag = new DocFrag();
+      frag.placeholder.textContent = EmpyStr + node;
+      return frag;
 
     default:
-      return frag;
+      return document.createTextNode(EmpyStr + (node || EmpyStr));
   }
 }
 
@@ -197,11 +99,47 @@ function createElement([tag, props, children], ctx) {
         registeredEvents[name].call(el, ev, name)
       );
     }
-    // ========
     else if (CustomAttrs.hasOwnProperty(name)) CustomAttrs[name](el, name, val);
     else if (value.constructor === Object) ASSIGN_OBJ(el[name], value);
     else if (el.hasOwnProperty(name)) el[name] = value;
     else el.setAttribute(name, value);
+  }
+}
+
+function renderComponent([index, props, children], ctx) {
+  const component = ctx.components[index],
+    _constructor = component.constructor,
+    docFrag = new DocFrag();
+
+  if (_constructor === Object) return docFrag.render(component);
+  else if (_constructor !== Function) throw new Error(ERR.C[1]);
+
+  const childrenAsProp = new ChildrenData();
+  if (children) {
+    const childrenRef = Symbol("childrenRef"),
+      childrenData = { children, ctx };
+    childrenAsProp.ref = childrenRef;
+    childrenAsProp.use = function (fn) {
+      // check if fn is a function, otherwise throw Error
+      childrenData.use ||= fn;
+    };
+    ChildrenContainer.set(childrenRef, childrenData);
+  }
+  Object.freeze(childrenAsProp);
+
+  const unNamed_2 = new MyLib(component, childrenAsProp, docFrag.render),
+    initializerFN = props ? initProps(props, ctx, pendUpdate) : pendUpdate;
+
+  // =>>  we pass the props to unNamed_2.call method
+  // =>>  unNamed_2.call() => run LayouEffects => updateComponent => Effects
+
+  initializerFN();
+  return docFrag;
+
+  function pendUpdate(props) {
+    isUpdating
+      ? PendingUpdates.add(() => unNamed_2.call(props))
+      : unNamed_2.call(props);
   }
 }
 
@@ -252,11 +190,12 @@ function initProps(props, ctx, propChangeCallback) {
   }
 }
 
+/***********************************************************/
 function ChildrenData() { }
 
 function DocFrag() {
   if (this.constructor !== DocFrag) return new DocFrag();
-  this.placeholder = document.createTextNode("");
+  this.placeholder = document.createTextNode(EmpyStr);
   this.frag = document.createDocumentFragment();
   this.snapshot = [];
   this.cache = new Map();
@@ -274,8 +213,8 @@ DocFrag.prototype.appendTo = function (parent) {
 DocFrag.prototype.insertNode = function (node) {
   const self = this;
   if (node.constructor === Array) node.forEach(self.insertNode, self);
-  else if (node.constructor !== DocFrag) self.appendChild(node);
-  else self.appendChild(node);
+  else if (node.constructor !== DocFrag) self.appendTo(node);
+  else self.frag.appendChild(node);
 };
 
 DocFrag.prototype.clear = function () {
@@ -299,7 +238,7 @@ DocFrag.prototype.render = function (JSXRoot) {
   switch (JSXRoot.constructor) {
     // Array may contains various Data Types
     case Array:
-      JSXRoot.map(container.render);
+      JSXRoot.forEach(container.render);
       break;
 
     // handle JSX Components
@@ -307,42 +246,48 @@ DocFrag.prototype.render = function (JSXRoot) {
       const cache = container.cache,
         key = JSXRoot.key;
 
-      if (!cache.has(key)) {
-        const ctx = new Component(JSXRoot);
-        cache.set(key, {
-          DOM: createJSXNode(JSXRoot.dom, JSXRoot),
-          observers: ctx.observers,
-        });
-      } else {
+      if (cache.has(key)) {
         const cachedComponent = cache.get(key);
         cachedComponent.observers.forEach(fn => fn());
+      } else {
+        const ctx = new Component(JSXRoot);
+        cache.set(key, {
+          DOM: createJSXNode(JSXRoot.dom, ctx),
+          observers: ctx.observers,
+        });
       }
 
-      return cache.get(key).DOM;
+      container.frag.appendChild(cache.get(key).DOM);
+      break;
 
     // Entry: [key, component]
     case Entry: {
       const cache = container.cache,
         key = JSXRoot.key;
 
-      if (!cache.has(key)) {
+      if (cache.has(key)) {
+        const cachedComponent = cache.get(key);
+        cachedComponent.observers.forEach(fn => fn());
+      } else {
         const ctx = new Component(JSXRoot.value);
         cache.set(key, {
-          DOM: createJSXNode(JSXRoot.dom, JSXRoot),
+          DOM: createJSXNode(JSXRoot.dom, ctx),
           observers: ctx.observers,
         });
       }
 
-      return cache.get(key).DOM;
+      container.frag.appendChild(cache.get(key).DOM);
+      break;
     }
 
     // handle Integers
     case Number:
-      return EmpyStr + JSXRoot;
+      container.placeholder.textContent = EmpyStr + JSXRoot;
+      break;
 
     // other Data Types (e.g Boolean, Symbol, Function, Null, undefined, ...etc)
     default:
-      return EmpyStr + (JSXRoot || EmpyStr);
+      container.placeholder.textContent = EmpyStr + (JSXRoot || EmpyStr);
   }
 };
 
